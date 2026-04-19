@@ -1,0 +1,41 @@
+# ─── Secrets (never commit these) ────────────────────────────────────────────
+.env
+*.env.local
+config/credentials.json
+config/token.json
+groq_keys.txt
+
+# ─── Python ───────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+*.egg
+
+# ─── Node.js ──────────────────────────────────────────────────────────────────
+node_modules/
+npm-debug.log*
+yarn-error.log
+
+# ─── Docker ───────────────────────────────────────────────────────────────────
+*.override.yml
+
+# ─── Data ─────────────────────────────────────────────────────────────────────
+chroma_data/
+postgres_data/
+redis_data/
+logs/
+*.log
+whatsapp_inbox.json
+whatsapp_session/
+
+# ─── OS ───────────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini

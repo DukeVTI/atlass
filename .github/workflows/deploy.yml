@@ -1,0 +1,45 @@
+name: Deploy Atlas to VPS
+
+on:
+  push:
+    branches:
+      - main  # Trigger deployment whenever code is pushed to the main branch
+
+jobs:
+  deploy:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          # The script below runs directly on your VPS
+          script: |
+            echo "Deploying Atlas to VPS..."
+            
+            # Ensure the directory exists
+            mkdir -p ~/Atlas
+            cd ~/Atlas
+            
+            # Check if git is initialized, if not run a fresh clone 
+            # (Assumes you have set up a deploy key or the repo is public)
+            if [ ! -d ".git" ]; then
+              echo "Repository not found locally. Please clone it manually the first time."
+              exit 1
+            fi
+            
+            # Pull latest changes
+            echo "Pulling latest code..."
+            git reset --hard HEAD
+            git pull origin main
+            
+            # Build and restart containers using production overrides
+            echo "Rebuilding and restarting Docker containers..."
+            docker compose -f docker-compose.yml -f docker-compose.prod.yml build
+            docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+            
+            echo "Deployment complete! ✅"
