@@ -2,7 +2,7 @@ import os
 import httpx
 import logging
 from typing import Any
-from tools.base import Tool, SecurityRisk
+from tools.base import Tool
 
 logger = logging.getLogger("atlas.tools.paystack")
 

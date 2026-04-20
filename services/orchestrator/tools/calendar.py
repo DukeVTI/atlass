@@ -2,7 +2,7 @@ import logging
 import datetime
 from typing import Any
 from googleapiclient.discovery import build
-from tools.base import Tool, SecurityRisk
+from tools.base import Tool
 from tools.google_auth import get_google_credentials
 
 logger = logging.getLogger("atlas.tools.calendar")
