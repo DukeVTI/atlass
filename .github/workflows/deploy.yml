@@ -25,17 +25,18 @@ jobs:
             mkdir -p ~/Atlas
             cd ~/Atlas
             
-            # Check if git is initialized, if not run a fresh clone 
-            # (Assumes you have set up a deploy key or the repo is public)
-            if [ ! -d ".git" ]; then
-              echo "Repository not found locally. Please clone it manually the first time."
-              exit 1
-            fi
+            export REPO_URL="https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"
             
-            # Pull latest changes
-            echo "Pulling latest code..."
-            git reset --hard HEAD
-            git pull origin main
+            # If this is the first deploy, clone; otherwise update
+            if [ ! -d ".git" ]; then
+              echo "First deploy: cloning repository..."
+              git clone $REPO_URL .
+            else
+              echo "Updating existing repository..."
+              git remote set-url origin $REPO_URL
+              git fetch origin main
+              git reset --hard origin/main
+            fi
             
             # Build and restart containers using production overrides
             echo "Rebuilding and restarting Docker containers..."
