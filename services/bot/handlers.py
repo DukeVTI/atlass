@@ -1,25 +1,25 @@
 """
-Atlas Bot — Message Handlers
-------------------------------
-All Telegram interaction logic for Layer 2.
-
-At this layer Atlas echoes messages back to confirm the read/write pipeline
-is healthy end-to-end. In Layer 3 the echo will be replaced by a call to
-the orchestrator service (Claude Haiku 3 + tool loop).
+Atlas Bot — Message Handlers (Layer 3)
+----------------------------------------
+Replaces the echo handler with a real call to the orchestrator service.
+All other handlers (commands, media, error) remain unchanged from Layer 2.
 
 Edge cases handled:
-- Telegram's 4096-character message limit
-- All non-text media types (photo, doc, voice, video, sticker, audio, location, contact)
-- Flood control (RetryAfter) — logged and silently absorbed
-- Network timeouts (TimedOut) — logged and silently absorbed
-- All other exceptions — logged, user notified politely
-- Updates with no message object (edited messages, channel posts, etc.)
+- Orchestrator not reachable — user gets a butler-style error message
+- Orchestrator returns 5xx — user notified gracefully
+- Network timeout — user notified, conversation not stored
+- Telegram's 4096-character message length limit
+- All non-text media types (photo, doc, voice, video, sticker, etc.)
+- Edited messages — silently logged, not reprocessed
+- Flood control (RetryAfter) and network timeouts
 """
 
 import logging
+import os
 
+import httpx
 from telegram import Update
-from telegram.constants import ParseMode
+from telegram.constants import ChatAction, ParseMode
 from telegram.error import Forbidden, RetryAfter, TimedOut
 from telegram.ext import ContextTypes
 
@@ -27,22 +27,20 @@ from auth import require_auth
 
 logger = logging.getLogger("atlas.bot.handlers")
 
-# Telegram hard limit for outgoing messages
 TELEGRAM_MAX_LENGTH = 4096
+ORCHESTRATOR_URL = os.environ.get("ORCHESTRATOR_URL", "http://orchestrator:8001")
 
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
 
 
-def _truncate(text: str, limit: int = TELEGRAM_MAX_LENGTH - 20) -> str:
-    """Truncate text to fit within Telegram's character limit."""
-    if len(text) <= limit:
-        return text
-    return text[: limit - 1] + "…"
+def _truncate(text: str, limit: int = TELEGRAM_MAX_LENGTH - 10) -> str:
+    """Truncate to Telegram's character limit."""
+    return text if len(text) <= limit else text[: limit - 1] + "…"
 
 
 def _classify_media(message) -> str:  # type: ignore[no-untyped-def]
-    """Return a human-readable label for the media type in a message."""
+    """Identify the media type of a non-text message."""
     if message.photo:
         return "photo"
     if message.document:
@@ -54,8 +52,7 @@ def _classify_media(message) -> str:  # type: ignore[no-untyped-def]
     if message.video_note:
         return "video note"
     if message.sticker:
-        emoji = message.sticker.emoji or ""
-        return f"sticker {emoji}".strip()
+        return f"sticker {message.sticker.emoji or ''}".strip()
     if message.audio:
         return "audio file"
     if message.animation:
@@ -73,78 +70,159 @@ def _classify_media(message) -> str:  # type: ignore[no-untyped-def]
     return "message"
 
 
+async def _call_orchestrator(user_id: int, username: str, message: str) -> str:
+    """
+    POST the message to the orchestrator and return Atlas's text response.
+
+    Handles all network-level failures and returns a butler-style error
+    message so the caller never needs to deal with HTTP exceptions.
+    """
+    try:
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            resp = await client.post(
+                f"{ORCHESTRATOR_URL}/chat",
+                json={
+                    "message": message,
+                    "user_id": user_id,
+                    "username": username,
+                },
+            )
+            resp.raise_for_status()
+            return resp.json()["response"]
+
+    except httpx.TimeoutException:
+        logger.warning("Orchestrator timed out for user %d.", user_id)
+        return (
+            "My apologies, sir — I took too long to gather my thoughts. "
+            "Please try again."
+        )
+    except httpx.HTTPStatusError as exc:
+        logger.error(
+            "Orchestrator returned HTTP %d for user %d: %s",
+            exc.response.status_code,
+            user_id,
+            exc.response.text[:200],
+        )
+        return (
+            "I encountered an internal error while processing that, sir. "
+            "It has been logged. Please try again."
+        )
+    except httpx.ConnectError:
+        logger.error("Cannot reach orchestrator at %s.", ORCHESTRATOR_URL)
+        return (
+            "I appear to be disconnected from my own mind at the moment, sir. "
+            "The orchestrator service is unreachable. "
+            "Please alert the infrastructure team."
+        )
+    except Exception as exc:
+        logger.error(
+            "Unexpected error calling orchestrator for user %d: %s", user_id, exc
+        )
+        return (
+            "Something unexpected happened, sir. "
+            "The error has been logged. Please try again shortly."
+        )
+
+
 # ─── Command Handlers ─────────────────────────────────────────────────────────
 
 
 @require_auth
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handle /start — send a butler-style greeting."""
+    """Handle /start — send a butler greeting."""
     user = update.effective_user
-    logger.info("User %d (%s) triggered /start.", user.id, user.first_name)
+    logger.info("User %d triggered /start.", user.id)
     await update.message.reply_text(
         f"Good day, {user.first_name}.\n\n"
         "I am Atlas — your personal AI butler, running on private infrastructure.\n\n"
-        "I am currently in Layer 2 (echo mode) while my intelligence is being "
-        "assembled. Everything you send me will be echoed back as confirmation "
-        "that the pipeline is healthy.\n\n"
-        "Type /status to see my current state, or /help for available commands."
+        "I am now fully operational. Ask me anything."
     )
 
 
 @require_auth
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handle /help — list available commands."""
+    """Handle /help."""
     logger.info("User %d triggered /help.", update.effective_user.id)
     await update.message.reply_text(
         "Available commands:\n\n"
         "/start — Wake me up\n"
         "/status — Check my operational status\n"
+        "/clear — Clear our conversation history\n"
         "/help — Show this message\n\n"
-        "Send any text and I will echo it back.\n"
-        "Multi-modal intelligence arrives in Layer 3."
+        "Or simply send me any message and I will respond."
     )
 
 
 @require_auth
 async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handle /status — report current layer and service state."""
+    """Handle /status — report current service state."""
     logger.info("User %d triggered /status.", update.effective_user.id)
     text = (
         "🟢 *Atlas is online*\n\n"
-        "▸ Layer: 2 — Telegram Gateway\n"
+        "▸ Layer: 3 — LLM Connected\n"
+        "▸ Model: Claude Haiku 3\n"
         "▸ Security gate: Active\n"
-        "▸ LLM: Not yet connected \\(Layer 3\\)\n"
-        "▸ Mode: Echo"
+        "▸ Memory: Working \\(in\\-process\\)\n"
+        "▸ Tools: Not yet connected \\(Layer 4\\)"
     )
     await update.message.reply_text(text, parse_mode=ParseMode.MARKDOWN_V2)
+
+
+@require_auth
+async def clear_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle /clear — wipe conversation history for this user."""
+    user = update.effective_user
+    logger.info("User %d requested history clear.", user.id)
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.delete(
+                f"{ORCHESTRATOR_URL}/chat/{user.id}/history"
+            )
+            resp.raise_for_status()
+        await update.message.reply_text(
+            "Done, sir. Our conversation history has been wiped. "
+            "I am starting fresh."
+        )
+    except Exception as exc:
+        logger.error("Failed to clear history for user %d: %s", user.id, exc)
+        await update.message.reply_text(
+            "I was unable to clear the history at this time, sir. Please try again."
+        )
 
 
 # ─── Message Handlers ─────────────────────────────────────────────────────────
 
 
 @require_auth
-async def echo_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """
-    Handle incoming text messages — echo them back.
-
-    This is a temporary placeholder. In Layer 3 this function will forward
-    the message to the orchestrator service and stream the AI response back.
+    Handle incoming text messages.
+    Forwards to the orchestrator and sends back Atlas's response.
+    Shows a "typing…" action while waiting.
     """
     if not update.message or not update.message.text:
         return
 
     user = update.effective_user
-    text = update.message.text
+    message = update.message.text
 
     logger.info(
         "Text from user %d (%s): %r",
         user.id,
         user.first_name,
-        text[:100] + ("…" if len(text) > 100 else ""),
+        message[:100] + ("…" if len(message) > 100 else ""),
     )
 
-    reply = _truncate(f"[Echo] {text}")
-    await update.message.reply_text(reply)
+    # Show typing indicator immediately
+    await update.message.chat.send_action(ChatAction.TYPING)
+
+    response = await _call_orchestrator(
+        user_id=user.id,
+        username=user.username or user.first_name,
+        message=message,
+    )
+
+    await update.message.reply_text(_truncate(response))
 
 
 @require_auth
@@ -152,10 +230,8 @@ async def handle_unsupported_media(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
     """
-    Handle all non-text, non-command messages gracefully.
-
-    Identifies the media type and informs the user that it will be
-    supported in a later layer (multi-modal processing).
+    Handle all non-text messages gracefully.
+    Informs the user that multi-modal processing comes in a later layer.
     """
     if not update.message:
         return
@@ -163,10 +239,7 @@ async def handle_unsupported_media(
     user = update.effective_user
     media_type = _classify_media(update.message)
 
-    logger.info(
-        "User %d sent unsupported media type: %s.", user.id, media_type
-    )
-
+    logger.info("User %d sent unsupported media: %s.", user.id, media_type)
     await update.message.reply_text(
         f"I've received your {media_type}, sir.\n\n"
         "Full multi-modal processing — images, documents, and voice — "
@@ -178,21 +251,14 @@ async def handle_unsupported_media(
 async def handle_edited_message(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
-    """
-    Handle edited messages.
-
-    Users sometimes edit messages after sending them. For now we acknowledge
-    the edit without reprocessing it, maintaining conversational awareness.
-    """
+    """Handle edited messages — silently log, do not reprocess."""
     if not update.edited_message:
         return
-
     logger.info(
         "User %d edited a message: %r",
         update.effective_user.id,
         (update.edited_message.text or "")[:80],
     )
-    # Don't reply — just silently note it. Avoids confusing echo spam.
 
 
 # ─── Global Error Handler ─────────────────────────────────────────────────────
@@ -202,37 +268,25 @@ async def error_handler(
     update: object, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
     """
-    Global catch-all error handler.
-
-    Handles Telegram-specific exceptions gracefully without crashing the bot.
-    For unknown errors: logs the full traceback and notifies the user if possible.
+    Catch-all error handler for the Telegram bot.
+    Handles platform errors gracefully without crashing.
     """
     error = context.error
 
-    # Flood control — Telegram asked us to back off
     if isinstance(error, RetryAfter):
-        logger.warning(
-            "Telegram flood control hit. RetryAfter: %.1f seconds.", error.retry_after
-        )
+        logger.warning("Telegram flood control: retry after %.1fs.", error.retry_after)
         return
 
-    # Network timeout — transient, the library will retry
     if isinstance(error, TimedOut):
-        logger.warning("Telegram request timed out — library will retry automatically.")
+        logger.warning("Telegram request timed out — library will retry.")
         return
 
-    # Bot was blocked or kicked by the user
     if isinstance(error, Forbidden):
         logger.warning("Bot was blocked or kicked by a user.")
         return
 
-    # Unknown error — log the full traceback
-    logger.error(
-        "Unhandled exception in update handler.",
-        exc_info=context.error,
-    )
+    logger.error("Unhandled exception in Telegram handler.", exc_info=error)
 
-    # Try to notify the user if we have a message context
     if isinstance(update, Update) and update.effective_message:
         try:
             await update.effective_message.reply_text(
@@ -240,5 +294,4 @@ async def error_handler(
                 "The incident has been logged. Please try again shortly."
             )
         except Exception:
-            # Don't let the error handler itself crash the bot
             pass
