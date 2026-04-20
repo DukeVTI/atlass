@@ -20,8 +20,10 @@ from contextlib import asynccontextmanager
 import asyncpg
 import chromadb
 import redis.asyncio as aioredis
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, Header, HTTPException
 from fastapi.responses import JSONResponse
+import hmac
+import hashlib
 
 # ─── Logging ──────────────────────────────────────────────────────────────────
 
@@ -111,3 +113,55 @@ async def health_detailed() -> JSONResponse:
         content={"status": overall, "services": results},
         status_code=status_code,
     )
+
+# ─── Webhooks ─────────────────────────────────────────────────────────────────
+
+@app.post("/webhooks/paystack", tags=["webhooks"])
+async def paystack_webhook(request: Request, x_paystack_signature: str = Header(None)):
+    """
+    Ingests Paystack events. Secured via HMAC-SHA512 signature.
+    On successful charge, we would push a message to Telegram natively.
+    """
+    secret = os.getenv("PAYSTACK_SECRET_KEY", "").encode("utf-8")
+    if not secret:
+        raise HTTPException(status_code=500, detail="Webhook misconfigured: missing secret.")
+
+    body = await request.body()
+    
+    # Generate signature using HMAC SHA512
+    hash_obj = hmac.new(secret, body, hashlib.sha512).hexdigest()
+
+    if not x_paystack_signature or hash_obj != x_paystack_signature:
+        logger.warning(f"Webhook signature mismatch! Incoming: {x_paystack_signature} vs Calculated: {hash_obj}")
+        raise HTTPException(status_code=400, detail="Invalid signature")
+
+    payload = await request.json()
+    event = payload.get("event")
+    
+    data = payload.get("data", {})
+    logger.info(f"Received authentic Paystack webhook event: {event}")
+    
+    if event == "charge.success":
+        amount = data.get("amount", 0) / 100
+        currency = data.get("currency", "NGN")
+        ref = data.get("reference")
+        
+        logger.info(f"ACTION REQUIRED: PUSH NOTIFICATION -> Payment of {amount} {currency} received! Ref: {ref}")
+        
+        # Dispatch to Redis queue for Telegram delivery:
+        try:
+            import json
+            r = aioredis.from_url(os.environ["REDIS_URL"])
+            message_payload = {
+                "type": "paystack_payment",
+                "amount": amount,
+                "currency": currency,
+                "reference": ref,
+                "text": f"💳 *Payment Received!*\nYou have received {currency} {amount:,.2f} via Paystack.\nRef: `{ref}`"
+            }
+            await r.rpush("atlas:notifications:telegram", json.dumps(message_payload))
+            await r.aclose()
+        except Exception as e:
+            logger.error(f"Failed to enqueue webhook notification to Redis: {e}")
+            
+    return {"status": "success"}

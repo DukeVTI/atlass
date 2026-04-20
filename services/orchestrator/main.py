@@ -24,6 +24,24 @@ from pydantic import BaseModel, Field
 from butler_loop import ButlerLoop
 from claude_client import ClaudeClient, ClaudeError
 
+from tools.registry import registry
+from tools.web_search import WebSearchTool
+from tools.calendar import CalendarReadTool, CalendarCreateTool
+from tools.gmail import GmailReadTool, GmailDraftTool, GmailSendTool
+from tools.paystack import PaystackBalanceTool, PaystackCustomerTool, PaystackTransactionsTool, PaystackTransferTool
+
+# Register all tools
+registry.register(WebSearchTool())
+registry.register(CalendarReadTool())
+registry.register(CalendarCreateTool())
+registry.register(GmailReadTool())
+registry.register(GmailDraftTool())
+registry.register(GmailSendTool())
+registry.register(PaystackBalanceTool())
+registry.register(PaystackCustomerTool())
+registry.register(PaystackTransactionsTool())
+registry.register(PaystackTransferTool())
+
 load_dotenv()
 
 # ─── Logging ──────────────────────────────────────────────────────────────────
@@ -56,6 +74,7 @@ async def lifespan(app: FastAPI):
     try:
         claude_client = ClaudeClient()
         butler = ButlerLoop(claude=claude_client)
+        butler.set_schemas(registry.get_schemas())
         logger.info(
             "Butler loop ready. Model: %s | Max tokens: %d | Temp: %.1f",
             claude_client.model,

@@ -59,6 +59,9 @@ class ButlerLoop:
         self.tool_schemas.append(schema)
         logger.info("Tool registered: %s", name)
 
+    def set_schemas(self, schemas: list[dict]):
+        self.tool_schemas = schemas
+
     async def run(
         self,
         messages: list[dict],
@@ -191,24 +194,10 @@ class ButlerLoop:
         Look up and execute a tool from the registry.
         Returns the result or an error string — never raises.
         """
+        from tools.registry import registry
+        
         name = tool_call.name
         inputs = tool_call.input
 
         logger.info("Executing tool: %s — inputs: %s", name, inputs)
-
-        if name not in self.tool_registry:
-            logger.warning("Unknown tool requested: %s", name)
-            return (
-                f"Tool '{name}' is not yet available. "
-                "This capability will be added in a future layer."
-            )
-
-        try:
-            fn = self.tool_registry[name]
-            return await fn(**inputs)
-        except TypeError as exc:
-            logger.error("Tool %s called with wrong arguments: %s", name, exc)
-            return f"Error: Wrong arguments passed to tool '{name}': {exc}"
-        except Exception as exc:
-            logger.error("Tool %s raised an exception: %s", name, exc, exc_info=True)
-            return f"Error executing '{name}': {exc}"
+        return await registry.execute(name, inputs)
