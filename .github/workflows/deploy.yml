@@ -16,7 +16,7 @@ jobs:
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
-          password: ${{ secrets.VPS_PASSWORD }}
+          key: ${{ secrets.VPS_SSH_KEY }}
           # The script below runs directly on your VPS
           script: |
             echo "Deploying Atlas to VPS..."
