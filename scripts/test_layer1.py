@@ -18,9 +18,14 @@ def check_endpoint(url: str, name: str) -> bool:
                 data = json.loads(response.read().decode())
                 print(f"✅ {name} is OK: {data}")
                 return True
-            else:
-                print(f"❌ {name} returned status {response.status}")
-                return False
+    except urllib.error.HTTPError as e:
+        print(f"❌ {name} returned HTTP {e.code}")
+        try:
+            error_data = json.loads(e.read().decode())
+            print(f"   Details: {json.dumps(error_data, indent=2)}")
+        except Exception:
+            print(f"   Details: could not parse error response")
+        return False
     except Exception as e:
         print(f"❌ {name} failed: {e}")
         return False
