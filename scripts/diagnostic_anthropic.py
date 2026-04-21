@@ -1,11 +1,18 @@
 import os
-import httpx
-import asyncio
-from dotenv import load_dotenv
+import json
+import urllib.request
+import urllib.error
 
-async def check_models():
-    load_dotenv()
-    api_key = os.getenv("ANTHROPIC_API_KEY")
+def check_models():
+    # Attempt to read .env manually to avoid dependency on python-dotenv
+    api_key = None
+    if os.path.exists(".env"):
+        with open(".env", "r") as f:
+            for line in f:
+                if line.startswith("ANTHROPIC_API_KEY="):
+                    api_key = line.split("=", 1)[1].strip().strip('"').strip("'")
+                    break
+
     if not api_key:
         print("ERROR: ANTHROPIC_API_KEY not found in .env file.")
         return
@@ -18,11 +25,11 @@ async def check_models():
         "anthropic-version": "2023-06-01"
     }
 
-    async with httpx.AsyncClient() as client:
-        try:
-            resp = await client.get(url, headers=headers)
-            if resp.status_code == 200:
-                data = resp.json()
+    req = urllib.request.Request(url, headers=headers)
+    try:
+        with urllib.request.urlopen(req) as response:
+            if response.status == 200:
+                data = json.loads(response.read().decode())
                 models = data.get("data", [])
                 print("\nSUCCESS! Models available to your account:")
                 print("-" * 50)
@@ -39,10 +46,12 @@ async def check_models():
                 else:
                     print("\nWARNING: No 'haiku' model IDs found in your allowed list!")
             else:
-                print(f"FAILED: API returned {resp.status_code}")
-                print(f"Error Response: {resp.text}")
-        except Exception as e:
-            print(f"CONNECTION ERROR: {e}")
+                print(f"FAILED: API returned {response.status}")
+    except urllib.error.HTTPError as e:
+        print(f"FAILED: API returned {e.code}")
+        print(f"Error Response: {e.read().decode()}")
+    except Exception as e:
+        print(f"CONNECTION ERROR: {e}")
 
 if __name__ == "__main__":
-    asyncio.run(check_models())
+    check_models()
