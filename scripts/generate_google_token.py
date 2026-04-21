@@ -27,21 +27,34 @@ def generate_token():
         return
 
     print("🚀 Starting Google OAuth Flow...")
+    print("NOTE: Since you are likely on a VPS, the browser will NOT open automatically.")
     
     try:
         flow = InstalledAppFlow.from_client_secrets_file(creds_path, SCOPES)
-        # This will pop open your default web browser
-        creds = flow.run_local_server(port=0)
+        
+        # Option 1: Headless flow (user copies URL to local browser)
+        # We use a fixed port to make SSH tunneling easy if needed
+        # But run_local_server with open_browser=False is standard
+        creds = flow.run_local_server(
+            port=8080, 
+            host='localhost', 
+            open_browser=False,
+            authorization_prompt_message='Please visit this URL to authorize Atlas: {url}',
+            success_message='✅ Authorization successful! You can close this tab.'
+        )
         
         # Save the credentials for the next run
         with open(token_path, "w") as token:
             token.write(creds.to_json())
             
-        print(f"✅ Success! Your authenticated token has been saved to: {token_path}")
-        print("You can now safely map this file into your docker-compose volume for the orchestrator to read.")
+        print(f"\n✅ Success! Your authenticated token has been saved to: {token_path}")
+        print("IMPORTANT: Ensure you map this file in your docker-compose.yml so Atlas can use it.")
         
     except Exception as e:
         print(f"❌ An error occurred during the OAuth flow: {e}")
+        print("\nTIP: If you are on a VPS, run this on your local machine FIRST:")
+        print(f"  ssh -L 8080:localhost:8080 azureuser@shadowfight")
+        print("Then run this script and open the link in your LOCAL browser.")
 
 if __name__ == "__main__":
     generate_token()

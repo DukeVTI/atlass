@@ -15,6 +15,7 @@ Future layers will add:
 
 import logging
 import os
+import json
 from contextlib import asynccontextmanager
 
 import asyncpg
@@ -39,6 +40,27 @@ logger = logging.getLogger("atlas.api")
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Atlas API starting up…")
+    
+    # Initialize Audit Logs table
+    try:
+        dsn = os.environ["POSTGRES_DSN"].replace("+asyncpg", "")
+        conn = await asyncpg.connect(dsn)
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS audit_logs (
+                id SERIAL PRIMARY KEY,
+                timestamp TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                user_id TEXT,
+                tool_name TEXT,
+                inputs JSONB,
+                status TEXT,
+                result TEXT
+            );
+        """)
+        await conn.close()
+        logger.info("Audit Log table initialized.")
+    except Exception as e:
+        logger.error(f"Failed to initialize Audit Log table: {e}")
+        
     yield
     logger.info("Atlas API shutting down.")
 
@@ -165,3 +187,31 @@ async def paystack_webhook(request: Request, x_paystack_signature: str = Header(
             logger.error(f"Failed to enqueue webhook notification to Redis: {e}")
             
     return {"status": "success"}
+
+# ─── Audit Logging ────────────────────────────────────────────────────────────
+
+@app.post("/audit", tags=["audit"])
+async def log_audit(request: Request):
+    """
+    Internal endpoint to record every tool call Atlas makes.
+    """
+    payload = await request.json()
+    
+    try:
+        dsn = os.environ["POSTGRES_DSN"].replace("+asyncpg", "")
+        conn = await asyncpg.connect(dsn)
+        await conn.execute("""
+            INSERT INTO audit_logs (user_id, tool_name, inputs, status, result)
+            VALUES ($1, $2, $3, $4, $5)
+        """, 
+        payload.get("user_id"),
+        payload.get("tool_name"),
+        json.dumps(payload.get("inputs", {})),
+        payload.get("status"),
+        str(payload.get("result"))
+        )
+        await conn.close()
+        return {"status": "recorded"}
+    except Exception as e:
+        logger.error(f"Audit Log write failure: {e}")
+        raise HTTPException(status_code=500, detail="Failed to write to audit log")

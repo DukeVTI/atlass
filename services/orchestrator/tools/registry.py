@@ -1,6 +1,7 @@
 import logging
 import json
-from typing import Any
+import httpx
+import os
 from tools.base import Tool
 from tools.security import ConfirmationManager
 
@@ -28,16 +29,49 @@ class ToolRegistry:
 
         # Executor-Level Confirmation Gate
         if tool.is_destructive:
-            return await ConfirmationManager.intercept(tool_name, inputs)
+            confirm_id = await ConfirmationManager.intercept(tool_name, inputs)
+            # Log as 'paused'
+            await self._audit_log(tool_name, inputs, "paused", f"Action paused. Confirmation ID: {confirm_id}")
+            return confirm_id
 
         try:
             result = await tool.run(**inputs)
-            if isinstance(result, (dict, list)):
-                return json.dumps(result)
-            return str(result)
+            serialized_result = json.dumps(result) if isinstance(result, (dict, list)) else str(result)
+            
+            # Fire-and-forget Audit Log
+            await self._audit_log(tool_name, inputs, "success", serialized_result)
+            
+            return serialized_result
         except Exception as exc:
             logger.error(f"Execution error in tool {tool_name}: {exc}", exc_info=True)
-            return f"Error executing {tool_name}: {str(exc)}"
+            error_msg = f"Error executing {tool_name}: {str(exc)}"
+            
+            # Log failure to Audit Log
+            await self._audit_log(tool_name, inputs, "error", error_msg)
+            
+            return error_msg
+
+    async def _audit_log(self, tool_name: str, inputs: dict, status: str, result: str):
+        """
+        Sends tool execution metadata to the central API audit endpoint.
+        """
+        api_url = f"{os.getenv('API_BASE_URL', 'http://api:8000')}/audit"
+        
+        # We don't have user_id in the registry yet, setting as 'system' or 'default'
+        # Layer 1 users are single-user (Duke), so 'duke' is fine.
+        payload = {
+            "user_id": "duke",
+            "tool_name": tool_name,
+            "inputs": inputs,
+            "status": status,
+            "result": result[:1000] # Truncate for DB sanity
+        }
+        
+        try:
+            async with httpx.AsyncClient() as client:
+                await client.post(api_url, json=payload, timeout=2.0)
+        except Exception as e:
+            logger.warning(f"Failed to write to central audit log: {e}")
 
 # Global Tool Registry instance for the orchestrator
 registry = ToolRegistry()
