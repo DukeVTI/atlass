@@ -47,7 +47,7 @@ class ClaudeClient:
             )
 
         self.client = AsyncAnthropic(api_key=api_key)
-        self.model = os.environ.get("ANTHROPIC_MODEL", "claude-3-haiku-20240307").strip()
+        self.model = os.environ.get("ANTHROPIC_MODEL", "claude-haiku-4-5-20251001").strip()
         self.max_tokens = int(os.environ.get("CLAUDE_MAX_TOKENS", "700"))
         self.temperature = float(os.environ.get("CLAUDE_TEMPERATURE", "0.6"))
 
