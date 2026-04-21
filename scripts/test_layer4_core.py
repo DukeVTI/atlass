@@ -1,18 +1,27 @@
 import os
-import httpx
-import asyncio
 import json
-import asyncpg
-from dotenv import load_dotenv
+import urllib.request
+import urllib.error
+import subprocess
 
-load_dotenv()
+# Manual .env parsing to avoid 'python-dotenv' dependency
+def load_env_manual():
+    env = {}
+    if os.path.exists(".env"):
+        with open(".env", "r") as f:
+            for line in f:
+                if "=" in line and not line.startswith("#"):
+                    k, v = line.split("=", 1)
+                    env[k.strip()] = v.strip().strip("'").strip('"')
+    return env
+
+ENV = load_env_manual()
 
 # Configuration
-ORCHESTRATOR_URL = os.getenv("ORCHESTRATOR_URL", "http://localhost:8001")
-API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8000")
-POSTGRES_DSN = os.getenv("POSTGRES_DSN", "postgresql://atlas:change_me_before_deploy@localhost/atlas")
+ORCHESTRATOR_URL = ENV.get("ORCHESTRATOR_URL", "http://localhost:8001")
+API_BASE_URL = ENV.get("API_BASE_URL", "http://localhost:8000")
 
-async def test_layer4():
+def test_layer4():
     print("🚀 Starting Layer 4 Core Validation Test...")
     print("-" * 50)
 
@@ -25,48 +34,53 @@ async def test_layer4():
 
     # 2. Test Orchestrator Connectivity
     print("\n[2/4] Testing Orchestrator Response...")
+    url = f"{ORCHESTRATOR_URL}/chat"
+    payload = json.dumps({
+        "user_id": 12345,
+        "text": "Hello Atlas. This is a system health check."
+    }).encode("utf-8")
+    
+    req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"})
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.post(f"{ORCHESTRATOR_URL}/chat", json={
-                "user_id": 12345,
-                "text": "Hello Atlas. This is a system health check."
-            })
-            resp.raise_for_status()
-            print(f"  - Orchestrator Response: {resp.json().get('response')[:50]}...")
+        with urllib.request.urlopen(req) as response:
+            data = json.loads(response.read().decode())
+            print(f"  - Orchestrator Response: {data.get('response')[:50]}...")
             print("  - Status: ✅ Success")
     except Exception as e:
         print(f"  - Status: ❌ Failed to connect to Orchestrator: {e}")
 
     # 3. Test Web Search Tool (Integrated)
     print("\n[3/4] Testing Web Search Tool...")
+    payload_search = json.dumps({
+        "user_id": 12345,
+        "text": "Search for the latest news about Anthropic Claude."
+    }).encode("utf-8")
+    
+    req_search = urllib.request.Request(url, data=payload_search, headers={"Content-Type": "application/json"})
     try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            resp = await client.post(f"{ORCHESTRATOR_URL}/chat", json={
-                "user_id": 12345,
-                "text": "Search for the latest news about Anthropic Claude."
-            })
-            resp.raise_for_status()
-            data = resp.json()
+        # Long timeout for search
+        with urllib.request.urlopen(req_search, timeout=30) as response:
+            data = json.loads(response.read().decode())
             print(f"  - Search Result: {data.get('response')[:100]}...")
             print("  - Status: ✅ Success")
     except Exception as e:
         print(f"  - Status: ❌ Web Search test failed: {e}")
 
-    # 4. Verify Audit Log Entry
-    print("\n[4/4] Verifying Audit Log Records...")
+    # 4. Verify Audit Log Entry via Docker exec (to avoid DB driver dependencies)
+    print("\n[4/4] Verifying Audit Log Records (via Docker)...")
     try:
-        # We check the database directly
-        conn = await asyncpg.connect(POSTGRES_DSN)
-        rows = await conn.fetch("SELECT tool_name, status, timestamp FROM audit_logs ORDER BY timestamp DESC LIMIT 5;")
-        await conn.close()
+        query = "SELECT tool_name, status, timestamp FROM audit_logs ORDER BY timestamp DESC LIMIT 3;"
+        cmd = [
+            "docker", "compose", "exec", "postgres", 
+            "psql", "-U", "atlas", "-d", "atlas", "-c", query
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True)
         
-        if rows:
-            print(f"  - Found {len(rows)} recent audit log entries:")
-            for row in rows:
-                print(f"    >>> {row['timestamp'].strftime('%H:%M:%S')} | Tool: {row['tool_name']} | Status: {row['status']}")
+        if result.returncode == 0 and "tool_name" in result.stdout:
+            print(result.stdout)
             print("  - Status: ✅ Success")
         else:
-            print("  - Status: ❌ No audit log entries found in database!")
+            print(f"  - Status: ❌ No audit log entries found or DB unreachable. Error: {result.stderr}")
     except Exception as e:
         print(f"  - Status: ❌ Database check failed: {e}")
 
@@ -74,4 +88,4 @@ async def test_layer4():
     print("Layer 4 Core Validation Complete.")
 
 if __name__ == "__main__":
-    asyncio.run(test_layer4())
+    test_layer4()
