@@ -30,6 +30,7 @@ import httpx
 
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy import text
 
 # Memory system imports
 from memory import (
@@ -133,21 +134,44 @@ http_client: Optional[httpx.AsyncClient] = None
 
 # ─── LIFESPAN ──────────────────────────────────────────────────────────────────
 
-async def _init_db_with_retry(max_retries: int = 5, initial_delay: float = 1.0):
+async def _init_db_with_retry(max_retries: int = 5, initial_delay: float = 2.0):
     """Initialize database with exponential backoff retry."""
+    global db_engine, SessionLocal
+    
     delay = initial_delay
     last_error = None
     
     for attempt in range(max_retries):
         try:
-            logger.info(f"Attempting database connection (attempt {attempt + 1}/{max_retries})...")
+            logger.info(f"Database connection attempt {attempt + 1}/{max_retries}...")
+            
+            # Create engine and test connection
+            if db_engine is None:
+                db_engine = create_async_engine(DATABASE_URL, echo=False, pool_pre_ping=True)
+                SessionLocal = sessionmaker(db_engine, class_=AsyncSession, expire_on_commit=False)
+            
+            # Test connection with a simple query
+            async with SessionLocal() as session:
+                await session.execute(text("SELECT 1"))
+            
+            logger.info("✓ PostgreSQL connection successful")
+            
+            # Now initialize schema
             await init_memory_schema(DATABASE_URL)
-            logger.info("✓ PostgreSQL initialized successfully")
+            logger.info("✓ Memory schema initialized successfully")
             return
+            
         except Exception as e:
             last_error = e
+            logger.warning(f"Connection attempt {attempt + 1} failed: {type(e).__name__}: {e}")
+            
+            if db_engine:
+                await db_engine.dispose()
+                db_engine = None
+                SessionLocal = None
+            
             if attempt < max_retries - 1:
-                logger.warning(f"Connection failed: {e}. Retrying in {delay}s...")
+                logger.info(f"Retrying in {delay}s...")
                 await asyncio.sleep(delay)
                 delay *= 2  # Exponential backoff
             else:
@@ -159,14 +183,12 @@ async def _init_db_with_retry(max_retries: int = 5, initial_delay: float = 1.0):
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup and shutdown logic."""
-    global memory_system, db_engine, SessionLocal, http_client
+    global memory_system, http_client
     
     logger.info("🚀 Memory Service starting up...")
     
     try:
         # Initialize database with retry logic
-        db_engine = create_async_engine(DATABASE_URL, echo=False)
-        SessionLocal = sessionmaker(db_engine, class_=AsyncSession, expire_on_commit=False)
         await _init_db_with_retry()
         
         # Initialize memory system
