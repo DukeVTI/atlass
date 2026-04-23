@@ -51,8 +51,6 @@ services:
     environment:
       POSTGRES_DSN: postgresql+asyncpg://atlas:${POSTGRES_PASSWORD}@postgres/atlas
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
-      CHROMADB_HOST: chromadb
-      CHROMADB_PORT: "8000"
       PC_WORKER_SECRET: ${PC_WORKER_SECRET}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
     depends_on:
@@ -60,8 +58,6 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-      chromadb:
-        condition: service_started
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:8000/health || exit 1"]
       interval: 10s
@@ -116,14 +112,15 @@ services:
     restart: unless-stopped
     environment:
       DATABASE_URL: postgresql+asyncpg://atlas:${POSTGRES_PASSWORD}@postgres/atlas
-      CHROMADB_HOST: chromadb
-      CHROMADB_PORT: "8000"
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
     depends_on:
       postgres:
         condition: service_healthy
-      chromadb:
-        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8002/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   whatsapp:
     build:

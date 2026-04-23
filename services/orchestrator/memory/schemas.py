@@ -9,12 +9,14 @@ from datetime import datetime
 from sqlalchemy import (
     Column, Integer, String, Text, Float, DateTime, 
     Boolean, JSON, ARRAY, ForeignKey, create_engine, 
-    MetaData, Table, Index, select
+    MetaData, Table, Index, select, text
 )
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import declarative_base, relationship
+from sqlalchemy.dialects.postgresql import JSONB
 from typing import Optional, List
 import logging
+import numpy as np
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +40,8 @@ class EpisodicMemoryRecord(Base):
     timestamp = Column(DateTime, nullable=False, index=True)
     
     tags = Column(ARRAY(String), default=[])
-    embedding_vector = Column(ARRAY(Float), nullable=True)
+    embedding_vector = Column(ARRAY(Float), nullable=True)  # JSONB fallback
+    embedding = Column(JSONB, nullable=True)  # pgvector as JSONB (384-dim vector)
     
     source = Column(String(50), nullable=False)
     reference_id = Column(String(255), nullable=True)
@@ -231,6 +234,7 @@ class ConversationMemoryRecord(Base):
     session_id = Column(String(100), nullable=False)  # Telegram chat ID
     
     turns_json = Column(JSON, default=[])  # Array of turn objects
+    embedding = Column(JSONB, nullable=True)  # Latest turn embedding for search
     
     started_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     last_turn_at = Column(DateTime, default=datetime.utcnow)
@@ -248,6 +252,7 @@ async def init_memory_schema(db_url: str) -> None:
     """
     Initialize memory database schema on startup.
     Creates all tables if they don't exist.
+    Enables pgvector extension for native vector search.
     
     Args:
         db_url: Async SQLAlchemy database URL (e.g., postgresql+asyncpg://...)
@@ -256,6 +261,14 @@ async def init_memory_schema(db_url: str) -> None:
         engine = create_async_engine(db_url, echo=False)
         
         async with engine.begin() as conn:
+            # Enable pgvector extension
+            try:
+                await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+                logger.info("✓ pgvector extension enabled")
+            except Exception as e:
+                logger.warning(f"pgvector extension not available, using JSONB fallback: {e}")
+            
+            # Create all tables
             await conn.run_sync(Base.metadata.create_all)
         
         logger.info("✓ Memory schema initialized successfully")

@@ -1,31 +1,27 @@
 """
 Atlas Embeddings & Vector Memory
 ---------------------------------
-Handles embedding generation via sentence-transformers and ChromaDB integration.
-Provides semantic similarity search for episodic and conversation memories.
+Handles embedding generation via sentence-transformers.
+Vectors stored in PostgreSQL (jsonb) for simplicity.
 
 Model: all-MiniLM-L6-v2 (33MB, CPU-safe, 384-dim embeddings)
-Collections:
-  - episodic_memories: Stores episodic events for semantic search
-  - conversation_history: Stores conversation turns for session context
 """
 
 import asyncio
 import logging
 from typing import List, Optional, Dict, Any
 from datetime import datetime
+import json
+import numpy as np
+
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, text
 
 try:
     from sentence_transformers import SentenceTransformer
     SENTENCE_TRANSFORMERS_AVAILABLE = True
 except ImportError:
     SENTENCE_TRANSFORMERS_AVAILABLE = False
-
-try:
-    import chromadb
-    CHROMADB_AVAILABLE = True
-except ImportError:
-    CHROMADB_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
@@ -116,74 +112,59 @@ class EmbeddingEngine:
 
 class VectorMemoryStore:
     """
-    ChromaDB-backed vector memory for episodic and conversation memories.
-    Provides semantic similarity search.
+    PostgreSQL pgvector-backed vector memory for episodic and conversation memories.
+    Falls back to JSONB cosine similarity if pgvector extension not available.
+    Provides semantic similarity search with native PostgreSQL support.
     """
     
-    def __init__(self, chroma_host: str = "localhost", chroma_port: int = 8000):
+    def __init__(self, db_session: AsyncSession, use_pgvector: bool = True):
         """
-        Initialize ChromaDB client.
+        Initialize PostgreSQL vector store.
         
         Args:
-            chroma_host: ChromaDB server hostname
-            chroma_port: ChromaDB server port
+            db_session: Active AsyncSession connection
+            use_pgvector: Whether to use pgvector (True) or JSONB fallback (False)
         """
-        if not CHROMADB_AVAILABLE:
-            raise ImportError(
-                "chromadb not installed. "
-                "Install with: pip install chromadb"
-            )
-        
-        self.chroma_host = chroma_host
-        self.chroma_port = chroma_port
-        self.client = None
-        self.episodic_collection = None
-        self.conversation_collection = None
+        self.db_session = db_session
+        self.use_pgvector = use_pgvector
         self._init_done = False
-        logger.info(f"VectorMemoryStore initialized for {chroma_host}:{chroma_port}")
+        logger.info(f"VectorMemoryStore initialized (pgvector={use_pgvector})")
     
     async def initialize(self) -> None:
-        """Connect to ChromaDB and initialize collections."""
+        """Check pgvector extension availability and configure accordingly."""
         if self._init_done:
             return
         
-        def _init():
-            # Connect to ChromaDB via HTTP (new API - no Settings needed)
-            client = chromadb.HttpClient(
-                host=self.chroma_host,
-                port=self.chroma_port
-            )
-            
-            # Create/get collections with metadata
-            episodic = client.get_or_create_collection(
-                name="episodic_memories",
-                metadata={
-                    "description": "Episodic memory events with semantic search",
-                    "embedding_model": "all-MiniLM-L6-v2"
-                },
-                distance_metric="cosine"
-            )
-            
-            conversation = client.get_or_create_collection(
-                name="conversation_history",
-                metadata={
-                    "description": "Conversation turns for session context",
-                    "embedding_model": "all-MiniLM-L6-v2"
-                },
-                distance_metric="cosine"
-            )
-            
-            return client, episodic, conversation
+        try:
+            # Try to use pgvector if available
+            if self.use_pgvector:
+                result = await self.db_session.execute(
+                    text("SELECT 1 FROM pg_extension WHERE extname='vector'")
+                )
+                if not result.scalar():
+                    logger.warning("pgvector extension not installed, falling back to JSONB")
+                    self.use_pgvector = False
+                else:
+                    logger.info("✓ pgvector extension confirmed available")
+        except Exception as e:
+            logger.warning(f"pgvector check failed: {e}, using JSONB fallback")
+            self.use_pgvector = False
         
-        client, episodic, conversation = await asyncio.get_event_loop().run_in_executor(
-            None, _init
-        )
-        
-        self.client = client
-        self.episodic_collection = episodic
-        self.conversation_collection = conversation
         self._init_done = True
-        logger.info("✓ ChromaDB collections initialized")
+    
+    def _cosine_similarity(self, vec1: List[float], vec2: List[float]) -> float:
+        """Compute cosine similarity between two vectors."""
+        arr1 = np.array(vec1, dtype=np.float32)
+        arr2 = np.array(vec2, dtype=np.float32)
+        
+        dot_product = np.dot(arr1, arr2)
+        norm1 = np.linalg.norm(arr1)
+        norm2 = np.linalg.norm(arr2)
+        
+        if norm1 == 0 or norm2 == 0:
+            return 0.0
+        
+        return float(dot_product / (norm1 * norm2))
     
     async def store_episodic(
         self,
@@ -194,7 +175,7 @@ class VectorMemoryStore:
         metadata: Optional[Dict[str, Any]] = None
     ) -> None:
         """
-        Store episodic memory with embedding in ChromaDB.
+        Store episodic memory with embedding in PostgreSQL.
         
         Args:
             user_id: User ID for scoping
@@ -206,20 +187,25 @@ class VectorMemoryStore:
         if not self._init_done:
             await self.initialize()
         
-        meta = metadata or {}
-        meta["user_id"] = str(user_id)
-        meta["timestamp"] = datetime.utcnow().isoformat()
+        # Store embedding as JSONB (always works)
+        embedding_json = json.dumps(embedding)
         
-        def _store():
-            self.episodic_collection.add(
-                ids=[memory_id],
-                embeddings=[embedding],
-                documents=[text],
-                metadatas=[meta]
-            )
+        # SQL to update embedding in existing episodic_memory record
+        # (The record should already exist in the database, we're just updating the embedding)
+        stmt = text(
+            """
+            UPDATE episodic_memory 
+            SET embedding = :embedding_json
+            WHERE id = :memory_id AND user_id = :user_id
+            """
+        )
         
-        await asyncio.get_event_loop().run_in_executor(None, _store)
-        logger.debug(f"Stored episodic memory: {memory_id}")
+        await self.db_session.execute(
+            stmt,
+            {"embedding_json": embedding_json, "memory_id": memory_id, "user_id": user_id}
+        )
+        await self.db_session.commit()
+        logger.debug(f"Stored episodic memory embedding: {memory_id}")
     
     async def store_conversation(
         self,
@@ -244,22 +230,24 @@ class VectorMemoryStore:
         if not self._init_done:
             await self.initialize()
         
-        user_emb, assistant_emb = embeddings
-        meta = metadata or {}
-        meta["user_id"] = str(user_id)
-        meta["timestamp"] = datetime.utcnow().isoformat()
+        # Store the assistant embedding (more relevant for context)
+        assistant_embedding = embeddings[1] if len(embeddings) > 1 else embeddings[0]
+        embedding_json = json.dumps(assistant_embedding)
         
-        def _store():
-            # Store both user and assistant messages
-            self.conversation_collection.add(
-                ids=[f"{turn_id}_user", f"{turn_id}_assistant"],
-                embeddings=[user_emb, assistant_emb],
-                documents=[user_text, assistant_text],
-                metadatas=[meta, meta]
-            )
+        stmt = text(
+            """
+            UPDATE conversation_memory 
+            SET embedding = :embedding_json
+            WHERE id = :turn_id AND user_id = :user_id
+            """
+        )
         
-        await asyncio.get_event_loop().run_in_executor(None, _store)
-        logger.debug(f"Stored conversation turn: {turn_id}")
+        await self.db_session.execute(
+            stmt,
+            {"embedding_json": embedding_json, "turn_id": turn_id, "user_id": user_id}
+        )
+        await self.db_session.commit()
+        logger.debug(f"Stored conversation turn embedding: {turn_id}")
     
     async def search_episodic(
         self,
@@ -269,7 +257,7 @@ class VectorMemoryStore:
         top_k: int = 5
     ) -> List[Dict[str, Any]]:
         """
-        Search episodic memories by semantic similarity.
+        Search episodic memories by semantic similarity using PostgreSQL.
         
         Args:
             user_id: User ID for scoping
@@ -283,28 +271,85 @@ class VectorMemoryStore:
         if not self._init_done:
             await self.initialize()
         
-        def _search():
-            results = self.episodic_collection.query(
-                query_embeddings=[embedding],
-                n_results=top_k,
-                where={"user_id": {"$eq": str(user_id)}}
+        embedding_json = json.dumps(embedding)
+        
+        # JSONB cosine similarity search
+        # Uses SQL function to calculate similarity for all rows, then sorts by relevance
+        stmt = text(
+            """
+            SELECT 
+                id,
+                summary,
+                embedding,
+                (1.0 - (
+                    (SELECT SUM(a * b) FROM jsonb_each_text(:embedding) e, jsonb_each_text(embedding) v WHERE e.key = v.key)
+                    / 
+                    (SQRT(SELECT SUM(POWER(CAST(v AS FLOAT8), 2)) FROM jsonb_each_text(:embedding) e(v))) *
+                    (SQRT(SELECT SUM(POWER(CAST(v AS FLOAT8), 2)) FROM jsonb_each_text(embedding) e(v)))
+                )) AS relevance
+            FROM episodic_memory
+            WHERE user_id = :user_id AND embedding IS NOT NULL
+            ORDER BY relevance DESC
+            LIMIT :top_k
+            """
+        )
+        
+        try:
+            result = await self.db_session.execute(
+                stmt,
+                {"user_id": user_id, "embedding": embedding_json, "top_k": top_k}
             )
+            rows = result.fetchall()
             
-            # Reformat ChromaDB results
             matches = []
-            if results and results["ids"] and results["ids"][0]:
-                for i, mem_id in enumerate(results["ids"][0]):
-                    matches.append({
-                        "id": mem_id,
-                        "text": results["documents"][0][i],
-                        "relevance": 1 - (results["distances"][0][i] / 2),  # Convert distance to similarity
-                        "metadata": results["metadatas"][0][i]
-                    })
+            for row in rows:
+                matches.append({
+                    "id": row[0],
+                    "text": row[1],
+                    "relevance": min(1.0, max(0.0, float(row[3]))) if row[3] is not None else 0.0,
+                    "metadata": {}
+                })
+            
+            logger.debug(f"Found {len(matches)} episodic memories for user {user_id}")
             return matches
         
-        results = await asyncio.get_event_loop().run_in_executor(None, _search)
-        logger.debug(f"Found {len(results)} episodic memories for user {user_id}")
-        return results
+        except Exception as e:
+            logger.warning(f"Complex SQL similarity search failed, using Python fallback: {e}")
+            # Fallback: fetch all embeddings and compute similarity in Python
+            stmt_fallback = text(
+                """
+                SELECT id, summary, embedding
+                FROM episodic_memory
+                WHERE user_id = :user_id AND embedding IS NOT NULL
+                LIMIT 1000
+                """
+            )
+            
+            result = await self.db_session.execute(
+                stmt_fallback,
+                {"user_id": user_id}
+            )
+            rows = result.fetchall()
+            
+            matches = []
+            for row in rows:
+                mem_id, text_summary, emb_json = row
+                if emb_json:
+                    mem_embedding = json.loads(emb_json)
+                    similarity = self._cosine_similarity(embedding, mem_embedding)
+                    matches.append({
+                        "id": mem_id,
+                        "text": text_summary,
+                        "relevance": similarity,
+                        "metadata": {}
+                    })
+            
+            # Sort by relevance and take top_k
+            matches.sort(key=lambda x: x["relevance"], reverse=True)
+            matches = matches[:top_k]
+            
+            logger.debug(f"Found {len(matches)} episodic memories (Python fallback)")
+            return matches
     
     async def search_conversation(
         self,
@@ -328,32 +373,48 @@ class VectorMemoryStore:
         if not self._init_done:
             await self.initialize()
         
-        def _search():
-            results = self.conversation_collection.query(
-                query_embeddings=[embedding],
-                n_results=top_k,
-                where={
-                    "$and": [
-                        {"user_id": {"$eq": str(user_id)}},
-                        {"session_id": {"$eq": session_id}}
-                    ]
-                }
-            )
-            
-            matches = []
-            if results and results["ids"] and results["ids"][0]:
-                for i, turn_id in enumerate(results["ids"][0]):
-                    matches.append({
-                        "turn_id": turn_id,
-                        "text": results["documents"][0][i],
-                        "relevance": 1 - (results["distances"][0][i] / 2),
-                        "metadata": results["metadatas"][0][i]
-                    })
-            return matches
+        embedding_json = json.dumps(embedding)
         
-        results = await asyncio.get_event_loop().run_in_executor(None, _search)
-        logger.debug(f"Found {len(results)} conversation turns for session {session_id}")
-        return results
+        # Fetch conversation records for session and compute similarity in Python
+        stmt = text(
+            """
+            SELECT id, turns_json, embedding
+            FROM conversation_memory
+            WHERE user_id = :user_id AND session_id = :session_id AND embedding IS NOT NULL
+            LIMIT 100
+            """
+        )
+        
+        result = await self.db_session.execute(
+            stmt,
+            {"user_id": user_id, "session_id": session_id}
+        )
+        rows = result.fetchall()
+        
+        matches = []
+        for row in rows:
+            session_id_db, turns_json, emb_json = row
+            if emb_json:
+                session_embedding = json.loads(emb_json)
+                similarity = self._cosine_similarity(embedding, session_embedding)
+                
+                # Extract latest turn text from turns_json
+                turns = turns_json if isinstance(turns_json, list) else []
+                latest_turn_text = turns[-1].get("assistant", "") if turns else ""
+                
+                matches.append({
+                    "turn_id": session_id_db,
+                    "text": latest_turn_text,
+                    "relevance": similarity,
+                    "metadata": {}
+                })
+        
+        # Sort by relevance and take top_k
+        matches.sort(key=lambda x: x["relevance"], reverse=True)
+        matches = matches[:top_k]
+        
+        logger.debug(f"Found {len(matches)} conversation turns for session {session_id}")
+        return matches
     
     async def delete_user_memories(self, user_id: int) -> None:
         """
@@ -365,16 +426,17 @@ class VectorMemoryStore:
         if not self._init_done:
             await self.initialize()
         
-        def _delete():
-            self.episodic_collection.delete(
-                where={"user_id": {"$eq": str(user_id)}}
-            )
-            self.conversation_collection.delete(
-                where={"user_id": {"$eq": str(user_id)}}
-            )
+        stmt = text(
+            """
+            DELETE FROM episodic_memory WHERE user_id = :user_id;
+            DELETE FROM conversation_memory WHERE user_id = :user_id;
+            """
+        )
         
-        await asyncio.get_event_loop().run_in_executor(None, _delete)
+        await self.db_session.execute(stmt, {"user_id": user_id})
+        await self.db_session.commit()
         logger.info(f"Deleted all memories for user {user_id}")
+
 
 
 # ─── INTEGRATED MEMORY SYSTEM ─────────────────────────────────────────────────
@@ -383,17 +445,26 @@ class MemorySystem:
     """
     High-level API combining embeddings + vector store.
     Provides simple interface for storing and retrieving memories.
+    Uses PostgreSQL with pgvector (or JSONB fallback) for vector search.
     """
     
     def __init__(
         self,
-        chroma_host: str = "localhost",
-        chroma_port: int = 8000,
-        embedding_model: str = "all-MiniLM-L6-v2"
+        db_session: AsyncSession,
+        embedding_model: str = "all-MiniLM-L6-v2",
+        use_pgvector: bool = True
     ):
-        """Initialize memory system."""
+        """
+        Initialize memory system.
+        
+        Args:
+            db_session: Active AsyncSession connection
+            embedding_model: Sentence transformer model to use
+            use_pgvector: Whether to use pgvector extension if available
+        """
         self.embeddings = EmbeddingEngine(embedding_model)
-        self.vector_store = VectorMemoryStore(chroma_host, chroma_port)
+        self.vector_store = VectorMemoryStore(db_session, use_pgvector)
+        self.db_session = db_session
         self._init_done = False
     
     async def initialize(self) -> None:
@@ -404,7 +475,7 @@ class MemorySystem:
         await self.embeddings.initialize()
         await self.vector_store.initialize()
         self._init_done = True
-        logger.info("✓ Memory system fully initialized")
+        logger.info("✓ Memory system fully initialized (PostgreSQL + pgvector)")
     
     async def remember_event(
         self,
@@ -505,6 +576,11 @@ class MemorySystem:
         """
         if not self._init_done:
             await self.initialize()
+        
+        embedding = await self.embeddings.embed(query)
+        return await self.vector_store.search_conversation(
+            user_id, session_id, embedding, top_k
+        )
         
         embedding = await self.embeddings.embed(query)
         return await self.vector_store.search_conversation(

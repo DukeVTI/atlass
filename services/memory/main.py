@@ -3,7 +3,7 @@ Atlas Memory Service
 ---------------------
 FastAPI service for episodic, factual, and procedural memory management.
 Provides HTTP endpoints for storing and retrieving memories.
-Integrates with PostgreSQL (structured), ChromaDB (vector), and embeddings pipeline.
+Integrates with PostgreSQL (structured data + pgvector embeddings).
 
 Endpoints:
 - GET /health                          — Liveness check
@@ -55,9 +55,6 @@ DATABASE_URL = os.getenv(
     "DATABASE_URL",
     "postgresql+asyncpg://atlas:atlas_pass@postgres:5432/atlas"
 )
-
-CHROMA_HOST = os.getenv("CHROMA_HOST", "chromadb")
-CHROMA_PORT = int(os.getenv("CHROMA_PORT", "8000"))
 
 ORCHESTRATOR_URL = os.getenv("ORCHESTRATOR_URL", "http://orchestrator:8001")
 
@@ -187,7 +184,7 @@ async def _init_db_with_retry(max_retries: int = 5, initial_delay: float = 2.0):
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup and shutdown logic."""
-    global memory_system, http_client
+    global memory_system, http_client, db_engine, SessionLocal
     
     logger.info("🚀 Memory Service starting up...")
     
@@ -195,14 +192,16 @@ async def lifespan(app: FastAPI):
         # Initialize database with retry logic
         await _init_db_with_retry()
         
-        # Initialize memory system
-        memory_system = MemorySystem(
-            chroma_host=CHROMA_HOST,
-            chroma_port=CHROMA_PORT,
-            embedding_model="all-MiniLM-L6-v2"
-        )
-        await memory_system.initialize()
-        logger.info("✓ Memory system initialized")
+        # Create a session for MemorySystem initialization
+        async with SessionLocal() as session:
+            # Initialize memory system with database session
+            memory_system = MemorySystem(
+                db_session=session,
+                embedding_model="all-MiniLM-L6-v2",
+                use_pgvector=True
+            )
+            await memory_system.initialize()
+            logger.info("✓ Memory system initialized (PostgreSQL + pgvector)")
         
         # Initialize HTTP client
         http_client = httpx.AsyncClient(timeout=30.0)

@@ -6,7 +6,6 @@ python-dotenv>=1.0.0
 # Database and Vector Store
 sqlalchemy[asyncpg]>=2.0.23
 asyncpg>=0.29.0
-chromadb>=0.4.21
 
 # NLP and Embeddings
 sentence-transformers>=2.2.2
