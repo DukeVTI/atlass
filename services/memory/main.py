@@ -138,6 +138,10 @@ async def _init_db_with_retry(max_retries: int = 5, initial_delay: float = 2.0):
     """Initialize database with exponential backoff retry."""
     global db_engine, SessionLocal
     
+    # Wait for postgres to fully initialize (health check can pass before auth is ready)
+    logger.info("Waiting 5 seconds for postgres to fully initialize...")
+    await asyncio.sleep(5)
+    
     delay = initial_delay
     last_error = None
     
