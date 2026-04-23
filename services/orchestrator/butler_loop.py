@@ -241,6 +241,18 @@ class ButlerLoop:
                 "role": "user",
                 "content": f"{memory_context}\n[Please use the above context to inform your response.]"
             }
+                # Store final conversation turn
+                if response["content"]:
+                    await self._store_conversation_turn(
+                        user_id,
+                        session_id,
+                        turn_number,
+                        first_user_message,
+                        response["content"],
+                        tools_used_in_turn
+                    )
+                
+                
             # Insert after system message (index 0) but before conversation history
             current_messages.insert(1, context_msg)
         
