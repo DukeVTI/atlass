@@ -111,8 +111,8 @@ services:
 
   memory:
     build:
-      context: ./services/memory
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: services/memory/Dockerfile
     restart: unless-stopped
     environment:
       POSTGRES_DSN: postgresql+asyncpg://atlas:${POSTGRES_PASSWORD}@postgres/atlas
