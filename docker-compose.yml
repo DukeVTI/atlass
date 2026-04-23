@@ -115,7 +115,7 @@ services:
       dockerfile: services/memory/Dockerfile
     restart: unless-stopped
     environment:
-      POSTGRES_DSN: postgresql+asyncpg://atlas:${POSTGRES_PASSWORD}@postgres/atlas
+      DATABASE_URL: postgresql+asyncpg://atlas:${POSTGRES_PASSWORD}@postgres/atlas
       CHROMADB_HOST: chromadb
       CHROMADB_PORT: "8000"
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
