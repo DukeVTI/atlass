@@ -26,11 +26,14 @@ When in doubt, refer back to the PRD. Do not invent features not in the PRD.
 Layer 1 — Infrastructure
 - Docker Compose scaffold with all services defined
 - PostgreSQL + Redis + ChromaDB containers up and healthy
-- Ollama installed on VPS with Llama 3.1 8B pulled
-- Cloudflare Tunnel configured for webhook ingestion
-- Basic health check endpoint on FastAPI returning 200
+- FastAPI API service with health checks and audit logging
+- Telegram bot gateway with command handlers
+- Claude Haiku 4.5 LLM integration (single provider, no fallbacks)
+- Core tool system (web search, Gmail, Calendar, Paystack)
+- Confirmation gates for destructive actions
 
-Do not touch Layer 2 (Telegram bot) until Layer 1 passes all health checks.
+Do not touch Layer 2 (PC Worker) until Layer 1 passes all health checks.
+Note: Ollama and Cloudflare Tunnel are planned for future layers (cost optimization and webhook exposure, respectively).
 
 ## Project Structure
 atlas/
@@ -51,16 +54,17 @@ atlas/
 └── docs/                     # PRD + architecture notes
 
 ## LLM Routing Logic
-All tasks → Anthropic Claude Haiku 3 (`claude-haiku-3`) — single provider, all cases.
+All tasks → Anthropic Claude Haiku 4.5 (`claude-haiku-4-5-20251001`) — single provider, all cases.
 No routing logic. No fallbacks. No secondary providers.
+Note: Groq integration and cost-based LLM routing are post-v1.0 optimizations.
 
 ## Tech Stack (Do Not Deviate Without Asking)
 - Python 3.11+ for all backend services
 - FastAPI for the API server
-- Celery + Redis for the task queue
+- Redis for caching and task queue (Celery configured in future layer)
 - PostgreSQL + SQLAlchemy (async) for structured data
 - ChromaDB for vector memory
-- Anthropic Claude Haiku 3 (`claude-haiku-3`) — sole LLM for all tasks
+- Anthropic Claude Haiku 4.5 (`claude-haiku-4-5-20251001`) — sole LLM for all tasks
 - python-telegram-bot v20 (async) for Telegram
 - Baileys (Node.js) for WhatsApp — runs as a sidecar, called via HTTP
 - Docker + Docker Compose for all services

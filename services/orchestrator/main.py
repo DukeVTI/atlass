@@ -166,7 +166,11 @@ async def chat(request: ChatRequest) -> ChatResponse:
         history = _history[user_id]
 
     try:
-        response_text = await butler.run(messages=history, user_id=user_id)
+        response_text = await butler.run(
+            messages=history,
+            user_id=user_id,
+            session_id=f"user_{user_id}"  # Use user_id as session identifier
+        )
     except ClaudeError as exc:
         # User-friendly Claude error — ClaudeError already has a butler-style message
         logger.error("ClaudeError for user %d: %s", user_id, exc)

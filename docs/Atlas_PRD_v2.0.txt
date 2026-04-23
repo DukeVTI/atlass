@@ -3,11 +3,11 @@
 
 ATLAS
 Voice-First Personal AI Agent
-Product Requirements Document  ·  Version 2.0
-Author: Duke  ·  NextGen Africa & Virusia Academy  ·  April 2026
+Product Requirements Document  ï¿½  Version 2.0
+Author: Duke  ï¿½  NextGen Africa & Virusia Academy  ï¿½  April 2026
 Classification: Confidential
 
-Atlas is a cloud-brained, distributed AI agent with local workers on PC and mobile. She manages your email, calendar, finances, files, and communications autonomously — commanded through Telegram, alive 24/7 on a VPS, and extended to your devices through lightweight workers that give her eyes, hands, and a voice on every platform you use.
+Atlas is a cloud-brained, distributed AI agent with local workers on PC and mobile. She manages your email, calendar, finances, files, and communications autonomously ï¿½ commanded through Telegram, alive 24/7 on a VPS, and extended to your devices through lightweight workers that give her eyes, hands, and a voice on every platform you use.
 
 
 
@@ -16,12 +16,12 @@ Atlas is a cloud-brained, distributed AI agent with local workers on PC and mobi
 
 1. Executive Summary
 Atlas is not a chatbot. She is an autonomous agent that lives in the cloud and reaches into your devices.
-Atlas is a distributed, voice-and-text-first AI agent designed to serve as a private, autonomous executive assistant for a founder-operator. Unlike monolithic desktop assistants that hog resources and die when the laptop closes, Atlas is architecturally split: her brain lives permanently on a cloud VPS, her hands reach into your PC and phone through lightweight workers, and her voice reaches you through the messaging apps you already use — primarily Telegram, with WhatsApp as an outbound delivery channel.
+Atlas is a distributed, voice-and-text-first AI agent designed to serve as a private, autonomous executive assistant for a founder-operator. Unlike monolithic desktop assistants that hog resources and die when the laptop closes, Atlas is architecturally split: her brain lives permanently on a cloud VPS, her hands reach into your PC and phone through lightweight workers, and her voice reaches you through the messaging apps you already use ï¿½ primarily Telegram, with WhatsApp as an outbound delivery channel.
 
-The core design insight is that your laptop should not be the bottleneck. Atlas is always on, always reasoning, always watchful — regardless of whether your devices are powered on. When you open Telegram and say 'Atlas, what happened while I was asleep?', she already knows. She has been watching your inbox, monitoring your Paystack account, and tracking your calendar all night.
+The core design insight is that your laptop should not be the bottleneck. Atlas is always on, always reasoning, always watchful ï¿½ regardless of whether your devices are powered on. When you open Telegram and say 'Atlas, what happened while I was asleep?', she already knows. She has been watching your inbox, monitoring your Paystack account, and tracking your calendar all night.
 
 DESIGN PRINCIPLE
-Speak once, get it done. Atlas is not a search engine with a voice interface. She is an agent that decomposes compound commands, executes them across multiple integrations, recovers from partial failures, and reports back with results — without hand-holding.
+Speak once, get it done. Atlas is not a search engine with a voice interface. She is an agent that decomposes compound commands, executes them across multiple integrations, recovers from partial failures, and reports back with results ï¿½ without hand-holding.
 
 This document is the single source of truth for Atlas's architecture, feature set, integration plan, security model, and delivery roadmap. It covers both v1.0 (the initial production system) and v2.0 (the full autonomous agent). Every feature is tagged with its target version.
 
@@ -35,7 +35,7 @@ Atlas should feel less like software and more like a capable, trusted person who
 ?Provide a natural, low-friction command interface through Telegram (primary) and WhatsApp (outbound).
 ?Achieve deep, bidirectional integration with email, calendar, finance, and the local filesystem through a distributed worker model.
 ?Build an extensible skill and integration architecture so new capabilities can be added without touching the core system.
-?Maintain strict privacy and security — credentials never in plaintext, destructive actions always gated, all tool calls logged.
+?Maintain strict privacy and security ï¿½ credentials never in plaintext, destructive actions always gated, all tool calls logged.
 ?Lay the technical foundation in v1.0 that makes v2.0's advanced autonomy a configuration change, not a rewrite.
 
 2.3 Success Metrics
@@ -56,24 +56,24 @@ Atlas v1.0 is a single-user system, built specifically for a founder-developer p
 
 Attribute	Profile Detail
 Name	Duke (primary user and system owner)
-Role	Founder, software developer, educator — operating multiple parallel projects
-Technical level	High — comfortable with VPS management, APIs, Docker, Python, Node.js
+Role	Founder, software developer, educator ï¿½ operating multiple parallel projects
+Technical level	High ï¿½ comfortable with VPS management, APIs, Docker, Python, Node.js
 Primary devices	Laptop (primary development), Android/iPhone (mobile), VPS (always-on brain)
 Communication style	Direct, fast, low-tolerance for friction or unnecessary confirmation prompts
 Key pain points	Context-switching overhead, communication delays, repetitive admin, managing multiple client projects simultaneously
-Privacy stance	Strong — API keys never exposed in logs, credentials in vault only, no third-party analytics
+Privacy stance	Strong ï¿½ API keys never exposed in logs, credentials in vault only, no third-party analytics
 Command preference	Short, natural language commands via Telegram; voice notes acceptable for longer instructions
-Working hours	Irregular — Atlas must be functional and proactive at all hours, not just 9-5
+Working hours	Irregular ï¿½ Atlas must be functional and proactive at all hours, not just 9-5
 
 3.1 Primary Use Case Clusters
-?Communications management — email, Telegram, WhatsApp on the user's behalf
-?Schedule and time management — calendar, reminders, focus sessions
-?Financial intelligence — Paystack monitoring, invoicing, revenue reporting
-?Local machine operations — files, scripts, code, documents (via PC worker)
-?Business operations — CRM, project tracking, client follow-ups
-?Knowledge and research — web search, document summarisation, briefings
-?Teaching automation — Virusia Academy student interactions (v1.1)
-?Personal productivity — habits, routines, health logging (v2.0)
+?Communications management ï¿½ email, Telegram, WhatsApp on the user's behalf
+?Schedule and time management ï¿½ calendar, reminders, focus sessions
+?Financial intelligence ï¿½ Paystack monitoring, invoicing, revenue reporting
+?Local machine operations ï¿½ files, scripts, code, documents (via PC worker)
+?Business operations ï¿½ CRM, project tracking, client follow-ups
+?Knowledge and research ï¿½ web search, document summarisation, briefings
+?Teaching automation ï¿½ Virusia Academy student interactions (v1.1)
+?Personal productivity ï¿½ habits, routines, health logging (v2.0)
 
 
 4. System Architecture
@@ -85,24 +85,24 @@ ARCHITECTURE DIAGRAM (TEXT)
 [ Telegram Bot ]  [ WhatsApp (Outbound) ]
           ?               ?
     +-------------------------------------+
-    ¦           VPS BRAIN (24/7)           ¦
-    ¦  Orchestrator · LLM · Memory         ¦
-    ¦  Email · Calendar · Paystack · Web   ¦
+    ï¿½           VPS BRAIN (24/7)           ï¿½
+    ï¿½  Orchestrator ï¿½ LLM ï¿½ Memory         ï¿½
+    ï¿½  Email ï¿½ Calendar ï¿½ Paystack ï¿½ Web   ï¿½
     +-------------------------------------+
-                   ¦  Secure WebSocket + Task Queue
+                   ï¿½  Secure WebSocket + Task Queue
          +--------------------+
   [ PC WORKER ]        [ MOBILE WORKER ]
-  Files · Scripts       Contacts · Location
-  Screenshots           Camera · SMS · Notifs
+  Files ï¿½ Scripts       Contacts ï¿½ Location
+  Screenshots           Camera ï¿½ SMS ï¿½ Notifs
 
-4.2 Tier 1 — VPS Brain
+4.2 Tier 1 ï¿½ VPS Brain
 The VPS is Atlas's permanent residence. It runs 24/7, handles all intelligence and orchestration, and owns all third-party integrations that do not require local device access. This is the only tier that runs the LLM and manages memory.
 
 Component	Responsibility	Technology
 Telegram Gateway	Receive commands, send responses, manage bot state	python-telegram-bot / Telethon
 WhatsApp Adapter	Outbound message delivery to contacts and clients	Baileys (WA Web) via Node.js microservice
 Orchestration Engine	Intent parsing, task decomposition, tool routing, plan execution	Python + LangGraph or custom DAG
-LLM Core	Reasoning, generation, tool selection, response synthesis	Groq API (speed) + Anthropic API (complex reasoning)
+LLM Core	Reasoning, generation, tool selection, response synthesis	Anthropic Claude Haiku 4.5 (sole provider, no fallbacks)
 Memory System	Short-term, episodic, factual, procedural memory layers	ChromaDB (vector) + PostgreSQL (structured)
 Email Adapter	Gmail / IMAP read, compose, send, search, categorise	Google API Client + imaplib
 Calendar Adapter	Google Calendar / CalDAV full CRUD + conflict detection	Google API Client + caldav
@@ -113,7 +113,7 @@ Scheduler	Cron-style recurring tasks (morning briefing, follow-up reminders)	Cel
 Security Module	Credential vault, permission gates, audit log	Keyring + cryptography + append-only SQLite log
 API Server	Worker registration, health checks, webhook ingestion	FastAPI
 
-4.3 Tier 2 — PC Worker
+4.3 Tier 2 ï¿½ PC Worker
 The PC worker is a lightweight background daemon running on the user's laptop. It has no LLM, no memory, and no intelligence. It is a dumb executor that receives structured job packets from the VPS, runs them, and returns results. It should consume negligible resources when idle (< 50MB RAM, < 0.5% CPU).
 
 Capability	Details	Technology
@@ -133,7 +133,7 @@ VPN / network status	Report current network and VPN connection state	psutil + su
 WORKER OFFLINE BEHAVIOUR
 When the PC worker is offline (laptop closed, powered off, or worker process stopped), the VPS brain handles this gracefully. It queues any PC-bound tasks, reports their pending status to the user in Telegram, and executes them automatically when the worker reconnects. The user is notified of reconnection and queued task completion.
 
-4.4 Tier 3 — Mobile Worker
+4.4 Tier 3 ï¿½ Mobile Worker
 The mobile worker is a lightweight app on the user's phone. Like the PC worker, it is a dumb executor. It gives Atlas access to phone-native capabilities that cannot be replicated from the cloud. It communicates with the VPS over a persistent WebSocket, authenticated by a device-specific token.
 
 Capability	Details	Technology
@@ -143,7 +143,7 @@ Camera	Capture photo and send to VPS for vision analysis	Expo Camera
 Push notifications	Receive and display rich notifications from Atlas	Expo Notifications / FCM
 SMS read (Android)	Read SMS inbox for monitoring (opt-in)	Expo SMS / native Android API
 SMS send (Android)	Send SMS messages on user's behalf	Expo SMS
-Local file access	Access phone storage — photos, documents, downloads	Expo FileSystem
+Local file access	Access phone storage ï¿½ photos, documents, downloads	Expo FileSystem
 Voice note recording	Record and send audio to VPS for transcription	Expo AV
 Calendar read (phone)	Read phone calendar for cross-device conflict detection	Expo Calendar
 
@@ -152,38 +152,38 @@ Channel	Role	Direction	Notes
 Telegram Bot	Primary command interface	Bidirectional	Text, voice notes, files, inline keyboards, callback buttons
 WhatsApp (Baileys)	Outbound delivery channel	Outbound only	Sends to contacts/clients on user's behalf; not used for commanding Atlas
 Telegram voice notes	Voice command input	Inbound	Transcribed by Whisper on VPS; treated as text command
-Telegram file upload	Document/data input to Atlas	Inbound	PDFs, spreadsheets, images — processed by VPS
+Telegram file upload	Document/data input to Atlas	Inbound	PDFs, spreadsheets, images ï¿½ processed by VPS
 Telegram inline keyboards	Confirmation gates, multi-choice responses	Bidirectional	Used for all medium/high-risk confirmations
 Push notification (mobile)	Proactive alerts from Atlas	Outbound	Payment received, urgent email, reminder fired
 Email (outbound)	Send emails on user's behalf	Outbound	Atlas composes, user confirms via Telegram, Atlas sends
 
-4.6 Data Flow — Standard Command
+4.6 Data Flow ï¿½ Standard Command
 1.User sends text or voice note to Atlas Telegram bot.
 2.If voice note: VPS transcribes audio using faster-whisper.
 3.Orchestration engine parses intent, classifies task type, checks required tools.
 4.Memory retrieval: fetch relevant episodic context and user preferences.
-5.LLM generates action plan — ordered list of tool calls with inputs.
+5.LLM generates action plan ï¿½ ordered list of tool calls with inputs.
 6.Executor runs action plan: VPS-local tools execute immediately; PC/mobile tasks dispatched via Redis to the appropriate worker.
 7.Workers execute jobs, stream results back to VPS.
 8.VPS assembles final response, synthesises narrative, sends to Telegram.
 9.Full interaction (command, plan, tool calls, result) written to audit log and memory.
 
 
-5. Command Interface — Telegram & WhatsApp
-5.1 Telegram Bot — Primary Interface
-Telegram is the primary interface through which all commands are sent to Atlas. The bot is a private bot — only the authorised user ID can interact with it. Any message from an unauthorised ID is silently ignored and logged.
+5. Command Interface ï¿½ Telegram & WhatsApp
+5.1 Telegram Bot ï¿½ Primary Interface
+Telegram is the primary interface through which all commands are sent to Atlas. The bot is a private bot ï¿½ only the authorised user ID can interact with it. Any message from an unauthorised ID is silently ignored and logged.
 
 5.1.1 Supported Input Types
-?Text messages — natural language commands in any format or length.
-?Voice notes — transcribed server-side; treated identically to text after transcription.
-?Photos and images — passed to vision model for analysis; user can ask questions about them.
-?Documents and PDFs — uploaded to VPS, processed, and available for reference in conversation.
-?Forwarded messages — Atlas can act on forwarded emails, news articles, or messages.
-?Inline bot commands — /start, /help, /status, /briefing, /stop (for aborting active tasks).
+?Text messages ï¿½ natural language commands in any format or length.
+?Voice notes ï¿½ transcribed server-side; treated identically to text after transcription.
+?Photos and images ï¿½ passed to vision model for analysis; user can ask questions about them.
+?Documents and PDFs ï¿½ uploaded to VPS, processed, and available for reference in conversation.
+?Forwarded messages ï¿½ Atlas can act on forwarded emails, news articles, or messages.
+?Inline bot commands ï¿½ /start, /help, /status, /briefing, /stop (for aborting active tasks).
 
 5.1.2 Confirmation UX
 ?Low-risk actions: Atlas executes immediately, then reports what she did.
-?Medium-risk actions (send email, delete file): Atlas shows a summary with Telegram inline keyboard — [Confirm ?] [Cancel ?] [Edit ?].
+?Medium-risk actions (send email, delete file): Atlas shows a summary with Telegram inline keyboard ï¿½ [Confirm ?] [Cancel ?] [Edit ?].
 ?High-risk actions (Paystack transfer, overwrite important file): Atlas shows a detailed review card + requires the user to type a confirmation PIN or phrase.
 ?Timeout: if a confirmation is not received within 5 minutes, the action is automatically cancelled and Atlas reports this.
 
@@ -197,12 +197,12 @@ Confirmation card	Medium/high risk action	Formatted message with inline keyboard
 Error report	Task failed partially or fully	Plain explanation + what succeeded + what failed + options
 Proactive alert	Atlas-initiated (payment, reminder)	Telegram message with context and suggested action
 
-5.2 WhatsApp — Outbound Delivery
-WhatsApp is not a command channel. Atlas uses it exclusively to send messages on the user's behalf to contacts and clients who communicate via WhatsApp. This keeps the risk of WhatsApp account bans minimal — Atlas is not running as a bot gateway but as an automated sender of user-initiated messages.
+5.2 WhatsApp ï¿½ Outbound Delivery
+WhatsApp is not a command channel. Atlas uses it exclusively to send messages on the user's behalf to contacts and clients who communicate via WhatsApp. This keeps the risk of WhatsApp account bans minimal ï¿½ Atlas is not running as a bot gateway but as an automated sender of user-initiated messages.
 
 ?Atlas can send text messages, voice notes, images, and documents to WhatsApp contacts.
 ?All WhatsApp sends are confirmed by the user in Telegram first.
-?Contact matching: user says 'send Dana the project update on WhatsApp' — Atlas matches by name in contacts, confirms the number, then sends.
+?Contact matching: user says 'send Dana the project update on WhatsApp' ï¿½ Atlas matches by name in contacts, confirms the number, then sends.
 ?Delivery status: Atlas reports read receipts and delivery confirmations back to Telegram.
 ?Virusia Academy use: Atlas sends scheduled lesson content to student WhatsApp groups on the user's behalf.
 
@@ -210,269 +210,269 @@ WHATSAPP RISK NOTE
 WhatsApp's Terms of Service prohibit automated bulk messaging via unofficial APIs. Atlas's WhatsApp usage is intentionally low-volume and contact-targeted, not broadcast. The Baileys session runs on the user's own number and behaves like a power user, not a bot. The user accepts the small residual risk of account restriction.
 
 
-6. Feature Specifications — v1.0
+6. Feature Specifications ï¿½ v1.0
 VERSION SCOPE
-All features in Section 6 are targeted for the v1.0 release. They represent the core production system — the minimum set required for Atlas to be genuinely useful in daily operation.
+All features in Section 6 are targeted for the v1.0 release. They represent the core production system ï¿½ the minimum set required for Atlas to be genuinely useful in daily operation.
 
 6.1 Email Management  ? v1.0
 6.1.1 Supported Providers
-?Gmail — full OAuth 2.0 via Google API (primary).
-?Microsoft Outlook / 365 — Microsoft Graph API.
-?Generic IMAP/SMTP — fallback for any other provider.
+?Gmail ï¿½ full OAuth 2.0 via Google API (primary).
+?Microsoft Outlook / 365 ï¿½ Microsoft Graph API.
+?Generic IMAP/SMTP ï¿½ fallback for any other provider.
 
 6.1.2 Core Capabilities
-?Read — fetch inbox, unread count, full thread content, attachment metadata.
-?Summarise — 'what did I miss in email today?' returns a structured digest by priority.
-?Compose — Atlas drafts emails from a natural language description; user reviews in Telegram.
-?Send — dispatched only after Telegram inline keyboard confirmation.
-?Reply — Atlas drafts replies in the context of the original thread.
-?Search — semantic search across email history ('find the invoice Samuel sent in February').
-?Priority triage — surfaces urgent emails on each morning briefing using urgency heuristics.
-?Label and categorise — apply labels/folders based on learned user patterns.
-?Unsubscribe — detect marketing emails and offer one-tap unsubscribe.
-?Attachment handling — download, summarise, and store attachments for reference.
+?Read ï¿½ fetch inbox, unread count, full thread content, attachment metadata.
+?Summarise ï¿½ 'what did I miss in email today?' returns a structured digest by priority.
+?Compose ï¿½ Atlas drafts emails from a natural language description; user reviews in Telegram.
+?Send ï¿½ dispatched only after Telegram inline keyboard confirmation.
+?Reply ï¿½ Atlas drafts replies in the context of the original thread.
+?Search ï¿½ semantic search across email history ('find the invoice Samuel sent in February').
+?Priority triage ï¿½ surfaces urgent emails on each morning briefing using urgency heuristics.
+?Label and categorise ï¿½ apply labels/folders based on learned user patterns.
+?Unsubscribe ï¿½ detect marketing emails and offer one-tap unsubscribe.
+?Attachment handling ï¿½ download, summarise, and store attachments for reference.
 
 6.1.3 Edge Cases
-?Thread splitting — correctly links replies to parent threads even when subject lines drift.
-?Large inboxes (10,000+ emails) — paginated retrieval with priority-first ordering; never loads all at once.
-?Attachment > 25MB — warns user, offers to compress or link rather than attach.
-?Signature management — injects correct signature based on recipient domain or contact type.
-?Bounce detection — surfaces delivery failures and suggests resolution.
-?Rate limiting — queues outgoing sends with exponential backoff if provider throttles.
-?OAuth token expiry — proactively refreshes tokens; prompts re-auth before next use if refresh fails.
-?Offline queuing — drafts composed while offline are stored locally and dispatched on reconnection.
-?Ambiguous recipient — 'email John' triggers disambiguation: 'Which John — John Doe or John Smith?'
+?Thread splitting ï¿½ correctly links replies to parent threads even when subject lines drift.
+?Large inboxes (10,000+ emails) ï¿½ paginated retrieval with priority-first ordering; never loads all at once.
+?Attachment > 25MB ï¿½ warns user, offers to compress or link rather than attach.
+?Signature management ï¿½ injects correct signature based on recipient domain or contact type.
+?Bounce detection ï¿½ surfaces delivery failures and suggests resolution.
+?Rate limiting ï¿½ queues outgoing sends with exponential backoff if provider throttles.
+?OAuth token expiry ï¿½ proactively refreshes tokens; prompts re-auth before next use if refresh fails.
+?Offline queuing ï¿½ drafts composed while offline are stored locally and dispatched on reconnection.
+?Ambiguous recipient ï¿½ 'email John' triggers disambiguation: 'Which John ï¿½ John Doe or John Smith?'
 
 6.2 Calendar & Scheduling  ? v1.0
 6.2.1 Core Capabilities
-?Create events — title, description, location, duration, attendees, recurrence, video conferencing link.
-?Read — today's agenda, week view, upcoming deadlines, next available free slot.
-?Update — reschedule, add/remove attendees, change location, update description by voice.
-?Delete — with Telegram confirmation gate.
-?Conflict detection — checks all connected calendars before creating any event.
-?Smart scheduling — 'find me a free 90 minutes this week before 3pm that doesn't clash with anything.'
-?Natural time parsing — 'next Thursday', 'end of the month', 'in three hours', 'the Friday after next.'
-?Reminders — voice-set alerts with custom lead times; delivered via Telegram push.
-?Attendee invites — generate and send calendar invitations to external attendees via email.
+?Create events ï¿½ title, description, location, duration, attendees, recurrence, video conferencing link.
+?Read ï¿½ today's agenda, week view, upcoming deadlines, next available free slot.
+?Update ï¿½ reschedule, add/remove attendees, change location, update description by voice.
+?Delete ï¿½ with Telegram confirmation gate.
+?Conflict detection ï¿½ checks all connected calendars before creating any event.
+?Smart scheduling ï¿½ 'find me a free 90 minutes this week before 3pm that doesn't clash with anything.'
+?Natural time parsing ï¿½ 'next Thursday', 'end of the month', 'in three hours', 'the Friday after next.'
+?Reminders ï¿½ voice-set alerts with custom lead times; delivered via Telegram push.
+?Attendee invites ï¿½ generate and send calendar invitations to external attendees via email.
 
 6.2.2 Edge Cases
-?Timezone conflicts — Atlas always stores as UTC, displays in user's local timezone, converts for attendees in other zones.
-?Recurring event modification — disambiguates 'this event only' vs 'all future events' before updating.
-?All-day vs timed — inferred from command context; Atlas confirms interpretation before creating.
-?Double-booking — warns explicitly and requires confirmation override; never silently double-books.
-?External .ics invites — parsed from email attachments; Atlas surfaces accept/decline options in Telegram.
-?Provider downtime — caches last known state; displays stale-data warning when calendar API is unreachable.
+?Timezone conflicts ï¿½ Atlas always stores as UTC, displays in user's local timezone, converts for attendees in other zones.
+?Recurring event modification ï¿½ disambiguates 'this event only' vs 'all future events' before updating.
+?All-day vs timed ï¿½ inferred from command context; Atlas confirms interpretation before creating.
+?Double-booking ï¿½ warns explicitly and requires confirmation override; never silently double-books.
+?External .ics invites ï¿½ parsed from email attachments; Atlas surfaces accept/decline options in Telegram.
+?Provider downtime ï¿½ caches last known state; displays stale-data warning when calendar API is unreachable.
 
-6.3 Financial Intelligence — Paystack  ? v1.0
+6.3 Financial Intelligence ï¿½ Paystack  ? v1.0
 6.3.1 Core Capabilities
-?Balance queries — live wallet and sub-account balances on demand.
-?Transaction history — fetch by date range, amount, reference, or customer name.
-?Revenue summaries — daily, weekly, monthly totals; grouped by plan, product, or customer.
-?Customer lookup — find customer payment history by email or name.
-?Payment alerts — proactive Telegram push notification when payment received above a configurable threshold.
-?Invoice status — check whether a specific invoice has been paid, pending, or failed.
-?Refund status — track refund processing state for a transaction.
-?Transfers — initiate transfer to a recipient bank account (requires high-security confirmation gate — see Section 9.2).
+?Balance queries ï¿½ live wallet and sub-account balances on demand.
+?Transaction history ï¿½ fetch by date range, amount, reference, or customer name.
+?Revenue summaries ï¿½ daily, weekly, monthly totals; grouped by plan, product, or customer.
+?Customer lookup ï¿½ find customer payment history by email or name.
+?Payment alerts ï¿½ proactive Telegram push notification when payment received above a configurable threshold.
+?Invoice status ï¿½ check whether a specific invoice has been paid, pending, or failed.
+?Refund status ï¿½ track refund processing state for a transaction.
+?Transfers ï¿½ initiate transfer to a recipient bank account (requires high-security confirmation gate ï¿½ see Section 9.2).
 
 6.3.2 Webhook Integration
 ?A FastAPI webhook endpoint on the VPS listens for Paystack event callbacks.
 ?Events handled: charge.success, transfer.success, transfer.failed, subscription.create, invoice.payment_failed.
 ?Each webhook event triggers the appropriate Atlas action (alert, update CRM record, send receipt).
 ?Webhook endpoint is authenticated with Paystack's HMAC-SHA512 signature verification.
-?Exposed via Cloudflare Tunnel — no port forwarding required on VPS.
+?Exposed via Cloudflare Tunnel ï¿½ no port forwarding required on VPS.
 
 6.3.3 Edge Cases
-?API key expiry — detect 401s, immediately alert user via Telegram, pause Paystack operations until key rotated.
-?Duplicate webhook events — idempotency keys prevent duplicate processing.
-?Pagination — handle transaction sets > 1,000 records with automatic cursor-based pagination.
-?Currency — all values displayed as NGN with locale-correct formatting; secondary USD display where applicable.
-?Sandbox vs live — hard configuration flag; Atlas refuses to call live API if sandbox mode is active.
-?Failed transfer — surface Paystack error codes in plain English with suggested remediation steps.
+?API key expiry ï¿½ detect 401s, immediately alert user via Telegram, pause Paystack operations until key rotated.
+?Duplicate webhook events ï¿½ idempotency keys prevent duplicate processing.
+?Pagination ï¿½ handle transaction sets > 1,000 records with automatic cursor-based pagination.
+?Currency ï¿½ all values displayed as NGN with locale-correct formatting; secondary USD display where applicable.
+?Sandbox vs live ï¿½ hard configuration flag; Atlas refuses to call live API if sandbox mode is active.
+?Failed transfer ï¿½ surface Paystack error codes in plain English with suggested remediation steps.
 
 6.4 Local File System Operations (via PC Worker)  ? v1.0
 6.4.1 Core Capabilities
-?Read — open and return content of text, markdown, PDF, code, CSV, and JSON files.
-?Write — create new files or overwrite existing with confirmation gate.
-?Append — add content to the end of a file without overwriting.
-?Move / copy — relocate files with path confirmation.
-?Delete — moves to local trash bin first; hard delete only after second confirmation.
-?Search — full-text keyword search (ripgrep); semantic similarity search via local embeddings.
-?Directory listing — list contents of any scoped directory with file sizes and modified dates.
-?Script execution — run shell or Python scripts; stream output back to Telegram; explain errors in plain English.
-?Document generation — create PDFs, DOCX, or Markdown from dictated content.
-?File watching — monitor a directory for new files; trigger Atlas actions on new arrivals (e.g. auto-summarise new PDFs in Downloads).
-?Screenshot — capture screen and send to Atlas for visual analysis or record-keeping.
+?Read ï¿½ open and return content of text, markdown, PDF, code, CSV, and JSON files.
+?Write ï¿½ create new files or overwrite existing with confirmation gate.
+?Append ï¿½ add content to the end of a file without overwriting.
+?Move / copy ï¿½ relocate files with path confirmation.
+?Delete ï¿½ moves to local trash bin first; hard delete only after second confirmation.
+?Search ï¿½ full-text keyword search (ripgrep); semantic similarity search via local embeddings.
+?Directory listing ï¿½ list contents of any scoped directory with file sizes and modified dates.
+?Script execution ï¿½ run shell or Python scripts; stream output back to Telegram; explain errors in plain English.
+?Document generation ï¿½ create PDFs, DOCX, or Markdown from dictated content.
+?File watching ï¿½ monitor a directory for new files; trigger Atlas actions on new arrivals (e.g. auto-summarise new PDFs in Downloads).
+?Screenshot ï¿½ capture screen and send to Atlas for visual analysis or record-keeping.
 
 6.4.2 Security Boundaries
-?Scoped roots — user defines allowed directories in settings; Atlas refuses access outside these.
-?Hard-blocked paths — /etc, /sys, /proc, /boot, C:\Windows are permanently blocked regardless of settings.
-?Sensitive file detection — warns before reading or transmitting files matching: *.pem, *id_rsa*, *.env, *secret*, *.key.
-?Trash bin recovery — deleted files held in ~/.atlas-trash/ for 24 hours before permanent deletion.
-?Execution sandboxing — scripts run in a subprocess with resource limits (CPU time, memory ceiling).
+?Scoped roots ï¿½ user defines allowed directories in settings; Atlas refuses access outside these.
+?Hard-blocked paths ï¿½ /etc, /sys, /proc, /boot, C:\Windows are permanently blocked regardless of settings.
+?Sensitive file detection ï¿½ warns before reading or transmitting files matching: *.pem, *id_rsa*, *.env, *secret*, *.key.
+?Trash bin recovery ï¿½ deleted files held in ~/.atlas-trash/ for 24 hours before permanent deletion.
+?Execution sandboxing ï¿½ scripts run in a subprocess with resource limits (CPU time, memory ceiling).
 
 6.4.3 Edge Cases
-?Binary files — detected and declined for read; metadata (size, type, modified date) returned instead.
-?Large files (> 50MB) — chunked for summarisation; user warned of processing time before starting.
-?Permission denied — OS-level permission errors surfaced in plain language with suggested fix.
-?Symlink loops — circular symlink chains detected and broken; user alerted.
-?Network drives / unmounted volumes — detected and reported before attempting access.
-?Worker offline — PC tasks queued on VPS; executed on worker reconnect; user notified of delay.
+?Binary files ï¿½ detected and declined for read; metadata (size, type, modified date) returned instead.
+?Large files (> 50MB) ï¿½ chunked for summarisation; user warned of processing time before starting.
+?Permission denied ï¿½ OS-level permission errors surfaced in plain language with suggested fix.
+?Symlink loops ï¿½ circular symlink chains detected and broken; user alerted.
+?Network drives / unmounted volumes ï¿½ detected and reported before attempting access.
+?Worker offline ï¿½ PC tasks queued on VPS; executed on worker reconnect; user notified of delay.
 
 6.5 Web Search & Research  ? v1.0
-?Live web search — query Brave Search API or SerpAPI for current information.
-?Article summarisation — fetch full article content and return a structured summary.
-?Multi-source synthesis — combine results from multiple sources into a single coherent answer.
-?Fact-check — cross-reference a claim against multiple sources and return a confidence assessment.
-?Document ingestion — user uploads a PDF or pastes a URL; Atlas reads and makes it available for Q&A.
+?Live web search ï¿½ query Brave Search API or SerpAPI for current information.
+?Article summarisation ï¿½ fetch full article content and return a structured summary.
+?Multi-source synthesis ï¿½ combine results from multiple sources into a single coherent answer.
+?Fact-check ï¿½ cross-reference a claim against multiple sources and return a confidence assessment.
+?Document ingestion ï¿½ user uploads a PDF or pastes a URL; Atlas reads and makes it available for Q&A.
 
 6.6 Morning Briefing  ? v1.0
 Atlas delivers a structured morning briefing to Telegram every day at a configurable time (default: 7:00am local). The briefing is assembled autonomously from all connected integrations and requires no user prompt.
 
-?Today's calendar — all events with times, locations, and attendees.
-?Unread emails — count by category; top 3 urgent items surfaced with summaries.
-?Paystack snapshot — overnight payments received, current balance, any failed transactions.
-?Pending follow-ups — emails or tasks that are overdue for response.
-?Key reminders — any Atlas-set reminders due today.
+?Today's calendar ï¿½ all events with times, locations, and attendees.
+?Unread emails ï¿½ count by category; top 3 urgent items surfaced with summaries.
+?Paystack snapshot ï¿½ overnight payments received, current balance, any failed transactions.
+?Pending follow-ups ï¿½ emails or tasks that are overdue for response.
+?Key reminders ï¿½ any Atlas-set reminders due today.
 ?Optional weather summary (if location provided).
 
 6.7 Proactive Alerts  ? v1.0
-?Payment received — immediate Telegram push when Paystack webhook fires for a successful charge.
-?Urgent email — Atlas scans new email on arrival and pushes alert if urgency score exceeds threshold.
-?Calendar conflict — alert when a new event would create a clash.
-?Upcoming meeting — 15-minute and 5-minute reminders for calendar events.
-?Overdue follow-up — alert when an email or task has been pending longer than a configured threshold.
-?PC worker offline — notify when PC worker has been disconnected for > 30 minutes.
+?Payment received ï¿½ immediate Telegram push when Paystack webhook fires for a successful charge.
+?Urgent email ï¿½ Atlas scans new email on arrival and pushes alert if urgency score exceeds threshold.
+?Calendar conflict ï¿½ alert when a new event would create a clash.
+?Upcoming meeting ï¿½ 15-minute and 5-minute reminders for calendar events.
+?Overdue follow-up ï¿½ alert when an email or task has been pending longer than a configured threshold.
+?PC worker offline ï¿½ notify when PC worker has been disconnected for > 30 minutes.
 
 
-7. Feature Specifications — v1.1
+7. Feature Specifications ï¿½ v1.1
 VERSION SCOPE
 v1.1 features build on a stable v1.0 system. They expand Atlas's reach into developer workflows, communication platforms, and educational automation.
 
 7.1 GitHub Integration  ? v1.1
-?Repo status — list open PRs, issues, and recent commits for a configured repo.
-?PR review — fetch PR diff, summarise changes, surface review comments.
-?Issue creation — create GitHub issues from a voice description.
-?Commit activity — 'what did I commit yesterday?' from natural language.
-?CI/CD status — check latest workflow run status; alert on failures.
-?Release notes — auto-generate release notes from merged PRs since last tag.
+?Repo status ï¿½ list open PRs, issues, and recent commits for a configured repo.
+?PR review ï¿½ fetch PR diff, summarise changes, surface review comments.
+?Issue creation ï¿½ create GitHub issues from a voice description.
+?Commit activity ï¿½ 'what did I commit yesterday?' from natural language.
+?CI/CD status ï¿½ check latest workflow run status; alert on failures.
+?Release notes ï¿½ auto-generate release notes from merged PRs since last tag.
 
 7.2 Slack Integration  ? v1.1
-?Read channels — summarise unread messages in specified channels.
-?Send messages — post to channels or DMs on user's behalf with Telegram confirmation.
-?Thread replies — reply to specific threads.
-?Search — semantic search across Slack history.
-?Alerts — push Telegram notification when Atlas's name or configured keywords are mentioned.
+?Read channels ï¿½ summarise unread messages in specified channels.
+?Send messages ï¿½ post to channels or DMs on user's behalf with Telegram confirmation.
+?Thread replies ï¿½ reply to specific threads.
+?Search ï¿½ semantic search across Slack history.
+?Alerts ï¿½ push Telegram notification when Atlas's name or configured keywords are mentioned.
 
-7.3 Virusia Academy — Teaching Automation  ? v1.1
+7.3 Virusia Academy ï¿½ Teaching Automation  ? v1.1
 Atlas manages the delivery of lesson content to Virusia Academy students on the user's behalf, freeing the user from manual scheduling and one-on-one repetitive Q&A.
 
-?Scheduled lesson delivery — Atlas sends lesson content to student WhatsApp groups at configured times.
-?Student Q&A — Atlas answers student questions using the curriculum as context; escalates complex questions to the user.
-?Progress tracking — tracks which students have confirmed receipt and engagement with each lesson.
-?Attendance flagging — surfaces students who have not engaged with recent content.
-?Assessment reminders — sends assignment due date reminders to students.
-?User briefing — daily summary of student activity delivered to user's Telegram.
+?Scheduled lesson delivery ï¿½ Atlas sends lesson content to student WhatsApp groups at configured times.
+?Student Q&A ï¿½ Atlas answers student questions using the curriculum as context; escalates complex questions to the user.
+?Progress tracking ï¿½ tracks which students have confirmed receipt and engagement with each lesson.
+?Attendance flagging ï¿½ surfaces students who have not engaged with recent content.
+?Assessment reminders ï¿½ sends assignment due date reminders to students.
+?User briefing ï¿½ daily summary of student activity delivered to user's Telegram.
 
 7.4 Advanced Agentic Workflows  ? v1.1
-?Multi-step task chains — Atlas executes compound tasks across integrations without mid-chain prompts (e.g. 'check if Dana paid, if yes send the project files and schedule the kickoff call').
-?Conditional logic — 'if I receive a payment above ?50,000 today, send a thank-you message and log it in my CRM.'
-?Scheduled workflows — define recurring multi-step routines that run automatically.
-?Task recovery — if a step in a chain fails, Atlas saves state, reports the failure, and resumes from the last successful step when the issue is resolved.
+?Multi-step task chains ï¿½ Atlas executes compound tasks across integrations without mid-chain prompts (e.g. 'check if Dana paid, if yes send the project files and schedule the kickoff call').
+?Conditional logic ï¿½ 'if I receive a payment above ?50,000 today, send a thank-you message and log it in my CRM.'
+?Scheduled workflows ï¿½ define recurring multi-step routines that run automatically.
+?Task recovery ï¿½ if a step in a chain fails, Atlas saves state, reports the failure, and resumes from the last successful step when the issue is resolved.
 
 
-8. Feature Specifications — v2.0
+8. Feature Specifications ï¿½ v2.0
 VERSION SCOPE
 v2.0 represents Atlas's evolution into a fully autonomous agent. These features require a stable v1.x foundation and introduce significantly more complex engineering. They are planned but not yet scoped for implementation timelines.
 
 8.1 Communications & Social Media  ? v2.0
-?Twitter / X — draft, schedule, and post tweets; monitor mentions and DMs.
-?LinkedIn — draft and post professional updates; monitor connection requests and messages.
-?Auto follow-up — detect emails that haven't received replies after N days; draft follow-up for user review.
-?Contact enrichment — automatically update contact records with social profile data.
-?Newsletter monitoring — subscribe and summarise newsletters from key contacts on a schedule.
+?Twitter / X ï¿½ draft, schedule, and post tweets; monitor mentions and DMs.
+?LinkedIn ï¿½ draft and post professional updates; monitor connection requests and messages.
+?Auto follow-up ï¿½ detect emails that haven't received replies after N days; draft follow-up for user review.
+?Contact enrichment ï¿½ automatically update contact records with social profile data.
+?Newsletter monitoring ï¿½ subscribe and summarise newsletters from key contacts on a schedule.
 
 8.2 Business CRM & Operations  ? v2.0
-?Personal CRM — maintain a database of clients, prospects, and contacts with interaction history.
-?Deal pipeline — track project statuses, payment stages, and client relationship health.
-?Invoice generation — auto-generate branded invoices from project data; send via email or WhatsApp.
-?Proposal drafting — create project proposals from a voice description with templated sections.
-?Contract tracking — monitor contract expiry dates and renewal windows.
-?Client brief — 'Atlas, brief me on Dana before my call' returns recent emails, payment history, open items.
-?Follow-up reminders — 'remind me to follow up with Samuel in 3 days if he hasn't replied.'
+?Personal CRM ï¿½ maintain a database of clients, prospects, and contacts with interaction history.
+?Deal pipeline ï¿½ track project statuses, payment stages, and client relationship health.
+?Invoice generation ï¿½ auto-generate branded invoices from project data; send via email or WhatsApp.
+?Proposal drafting ï¿½ create project proposals from a voice description with templated sections.
+?Contract tracking ï¿½ monitor contract expiry dates and renewal windows.
+?Client brief ï¿½ 'Atlas, brief me on Dana before my call' returns recent emails, payment history, open items.
+?Follow-up reminders ï¿½ 'remind me to follow up with Samuel in 3 days if he hasn't replied.'
 
 8.3 Knowledge & Research Intelligence  ? v2.0
-?Topic monitoring — Atlas watches configured keywords daily and sends a briefing when significant new content appears.
-?Competitive intelligence — track what specified companies or people are publishing or announcing.
-?Deep research — multi-source synthesis reports on a given topic, delivered as a structured document.
-?Meeting prep — given a name or company, compile a research brief before a scheduled meeting.
-?Podcast / video summarisation — transcribe and summarise audio or video content from a URL.
+?Topic monitoring ï¿½ Atlas watches configured keywords daily and sends a briefing when significant new content appears.
+?Competitive intelligence ï¿½ track what specified companies or people are publishing or announcing.
+?Deep research ï¿½ multi-source synthesis reports on a given topic, delivered as a structured document.
+?Meeting prep ï¿½ given a name or company, compile a research brief before a scheduled meeting.
+?Podcast / video summarisation ï¿½ transcribe and summarise audio or video content from a URL.
 
 8.4 Developer Workflow Automation  ? v2.0
-?Test runner — run test suites on the PC worker and explain failures in plain language.
-?Code scaffolding — generate boilerplate file structures from a voice description.
-?Deployment assistant — trigger deployment pipelines and monitor rollout status.
-?Error log analysis — watch server logs; alert on error patterns and suggest root causes.
-?Dependency monitoring — alert when a project dependency has a new version or a critical CVE.
-?Code review briefing — summarise open PRs across all repos and flag anything stale.
+?Test runner ï¿½ run test suites on the PC worker and explain failures in plain language.
+?Code scaffolding ï¿½ generate boilerplate file structures from a voice description.
+?Deployment assistant ï¿½ trigger deployment pipelines and monitor rollout status.
+?Error log analysis ï¿½ watch server logs; alert on error patterns and suggest root causes.
+?Dependency monitoring ï¿½ alert when a project dependency has a new version or a critical CVE.
+?Code review briefing ï¿½ summarise open PRs across all repos and flag anything stale.
 
 8.5 Personal Productivity & Health  ? v2.0
-?Pomodoro / focus sessions — start, track, and report on focus blocks; hold Telegram messages during deep work.
-?Habit logging — log meals, exercise, sleep, or custom habits by voice; weekly summary report.
-?Health reminders — medication, hydration, or supplement reminders at configurable intervals.
-?Sleep intelligence — nudge user to wind down based on calendar load for tomorrow.
-?End-of-day summary — what Atlas did today, what tasks are pending, tomorrow's top priorities.
-?Time-blocking — Atlas proposes a daily schedule based on task list and calendar; user approves or adjusts.
+?Pomodoro / focus sessions ï¿½ start, track, and report on focus blocks; hold Telegram messages during deep work.
+?Habit logging ï¿½ log meals, exercise, sleep, or custom habits by voice; weekly summary report.
+?Health reminders ï¿½ medication, hydration, or supplement reminders at configurable intervals.
+?Sleep intelligence ï¿½ nudge user to wind down based on calendar load for tomorrow.
+?End-of-day summary ï¿½ what Atlas did today, what tasks are pending, tomorrow's top priorities.
+?Time-blocking ï¿½ Atlas proposes a daily schedule based on task list and calendar; user approves or adjusts.
 
-8.6 Financial Intelligence — Extended  ? v2.0
-?Flutterwave integration — monitor a second payment processor alongside Paystack.
-?Expense tracking — log business expenses by voice; generate monthly expense reports.
-?Budget alerts — configure monthly spend ceilings per category; alert when approaching limit.
-?Revenue forecasting — project next month's revenue based on historical Paystack patterns.
-?Tax prep export — generate structured expense and income reports in a format suitable for accountants.
+8.6 Financial Intelligence ï¿½ Extended  ? v2.0
+?Flutterwave integration ï¿½ monitor a second payment processor alongside Paystack.
+?Expense tracking ï¿½ log business expenses by voice; generate monthly expense reports.
+?Budget alerts ï¿½ configure monthly spend ceilings per category; alert when approaching limit.
+?Revenue forecasting ï¿½ project next month's revenue based on historical Paystack patterns.
+?Tax prep export ï¿½ generate structured expense and income reports in a format suitable for accountants.
 
 8.7 Security & System Monitoring  ? v2.0
-?Website uptime monitoring — watch configured URLs; alert on downtime within 2 minutes.
-?Unusual Paystack activity — flag transactions that deviate significantly from historical patterns.
-?VPS health monitoring — CPU, RAM, disk, and process alerts delivered to Telegram.
-?Backup confirmation — daily confirmation that critical files and databases have been backed up.
-?API key rotation reminders — alert user 14 days before any credential's configured expiry date.
-?Failed login alerting — integrate with VPS auth logs; alert on repeated SSH failures.
+?Website uptime monitoring ï¿½ watch configured URLs; alert on downtime within 2 minutes.
+?Unusual Paystack activity ï¿½ flag transactions that deviate significantly from historical patterns.
+?VPS health monitoring ï¿½ CPU, RAM, disk, and process alerts delivered to Telegram.
+?Backup confirmation ï¿½ daily confirmation that critical files and databases have been backed up.
+?API key rotation reminders ï¿½ alert user 14 days before any credential's configured expiry date.
+?Failed login alerting ï¿½ integrate with VPS auth logs; alert on repeated SSH failures.
 
 8.8 Browser & Web Automation  ? v2.0
-?Form filling — complete web forms on behalf of the user (executed via PC worker + Playwright).
-?Web scraping — extract structured data from websites on a schedule.
-?Price monitoring — watch a product URL and alert when price drops below a threshold.
-?Application submission — fill and submit online applications or forms with user-provided data.
+?Form filling ï¿½ complete web forms on behalf of the user (executed via PC worker + Playwright).
+?Web scraping ï¿½ extract structured data from websites on a schedule.
+?Price monitoring ï¿½ watch a product URL and alert when price drops below a threshold.
+?Application submission ï¿½ fill and submit online applications or forms with user-provided data.
 
 8.9 Notion & Knowledge Base  ? v2.0
 ?Read and write Notion pages and databases.
 ?Create meeting notes directly in Notion from a voice summary.
-?Query Notion databases — 'what tasks are overdue in my project tracker?'
+?Query Notion databases ï¿½ 'what tasks are overdue in my project tracker?'
 ?Sync Atlas episodic memory highlights to a Notion journal page.
 
 8.10 Multi-Agent & Atlas Network  ? v2.0
-?Specialised sub-agents — dedicated agents for research, coding, and communications that the orchestrator delegates to.
-?Agent-to-agent communication — sub-agents can request data or actions from each other without user prompting.
-?NextGen Africa agent — a student-facing Atlas variant that manages the academy independently.
+?Specialised sub-agents ï¿½ dedicated agents for research, coding, and communications that the orchestrator delegates to.
+?Agent-to-agent communication ï¿½ sub-agents can request data or actions from each other without user prompting.
+?NextGen Africa agent ï¿½ a student-facing Atlas variant that manages the academy independently.
 
 
 9. Security, Privacy & Trust Model
-Atlas is a cloud-first system. Security is not an afterthought — it is baked into every layer of the design.
+Atlas is a cloud-first system. Security is not an afterthought ï¿½ it is baked into every layer of the design.
 9.1 Core Privacy Principles
-?No telemetry — Atlas collects no analytics, usage data, or behavioural data for any third party.
-?Credential vault — all API keys and OAuth tokens stored in the VPS keyring or an encrypted vault (Vault by HashiCorp, or a local AES-256 encrypted SQLite file). Never in .env files committed to git. Never in logs.
-?Audit log — immutable, append-only log of every tool call Atlas makes, including timestamp, action taken, result, and whether user confirmation was granted. Stored in PostgreSQL with write-only access from the main process.
-?Data minimisation — Atlas only fetches data it needs for the current task. No bulk data collection 'just in case'.
-?User-controlled data deletion — user can instruct Atlas to wipe any or all memory categories on demand.
+?No telemetry ï¿½ Atlas collects no analytics, usage data, or behavioural data for any third party.
+?Credential vault ï¿½ all API keys and OAuth tokens stored in the VPS keyring or an encrypted vault (Vault by HashiCorp, or a local AES-256 encrypted SQLite file). Never in .env files committed to git. Never in logs.
+?Audit log ï¿½ immutable, append-only log of every tool call Atlas makes, including timestamp, action taken, result, and whether user confirmation was granted. Stored in PostgreSQL with write-only access from the main process.
+?Data minimisation ï¿½ Atlas only fetches data it needs for the current task. No bulk data collection 'just in case'.
+?User-controlled data deletion ï¿½ user can instruct Atlas to wipe any or all memory categories on demand.
 
 9.2 Confirmation Gate Matrix
-Every action Atlas can take is classified by risk level. The confirmation gate defines what proof of user intent is required before execution. This cannot be overridden by a chat command — it is enforced in the executor layer.
+Every action Atlas can take is classified by risk level. The confirmation gate defines what proof of user intent is required before execution. This cannot be overridden by a chat command ï¿½ it is enforced in the executor layer.
 
 Action	Risk Level	Gate Required
-Read email / calendar / Paystack data	None	No gate — execute and report
-Web search, summarise article	None	No gate — execute and report
-Read local files (scoped)	None	No gate — execute and report
-Draft email (not sent)	Low	No gate — Atlas shows draft for review
+Read email / calendar / Paystack data	None	No gate ï¿½ execute and report
+Web search, summarise article	None	No gate ï¿½ execute and report
+Read local files (scoped)	None	No gate ï¿½ execute and report
+Draft email (not sent)	Low	No gate ï¿½ Atlas shows draft for review
 Create calendar event	Low	Atlas reads back details; user replies 'confirm'
 Send email	Medium	Telegram inline keyboard: [Send ?] [Edit] [Cancel]
 Reply to email	Medium	Telegram inline keyboard: [Send ?] [Edit] [Cancel]
@@ -489,10 +489,10 @@ Modify Atlas memory or settings	Medium	Telegram inline keyboard confirmation
 Add new skill or integration	Medium	Telegram inline keyboard confirmation
 
 9.3 Telegram Security
-?Allowlist-only — Atlas responds only to messages from the configured Telegram user ID. All other messages are silently dropped and logged.
-?Bot token storage — Telegram bot token stored in VPS keyring only, never in source code or environment files committed to version control.
-?Rate limiting — Atlas enforces a maximum of 60 commands per hour; alerts user if approaching limit due to scripted or accidental spam.
-?Session hijack protection — Atlas detects abnormal patterns (commands from unusual times, unusual command sequences) and can temporarily lock itself pending user verification.
+?Allowlist-only ï¿½ Atlas responds only to messages from the configured Telegram user ID. All other messages are silently dropped and logged.
+?Bot token storage ï¿½ Telegram bot token stored in VPS keyring only, never in source code or environment files committed to version control.
+?Rate limiting ï¿½ Atlas enforces a maximum of 60 commands per hour; alerts user if approaching limit due to scripted or accidental spam.
+?Session hijack protection ï¿½ Atlas detects abnormal patterns (commands from unusual times, unusual command sequences) and can temporarily lock itself pending user verification.
 
 9.4 Threat Model
 Threat	Likelihood	Mitigation
@@ -510,12 +510,12 @@ Memory poisoning (false memories)	Low	Memory writes validated against source; us
 
 10. Agentic Engine & Memory System
 10.1 Task Planning Model
-When Atlas receives a compound command, she does not execute blindly. The orchestration engine decomposes the command into an ordered action graph — a directed acyclic graph (DAG) of tool calls where each node has defined inputs, expected outputs, and a success condition. This plan is executed node by node, with results from earlier nodes fed as inputs to later ones.
+When Atlas receives a compound command, she does not execute blindly. The orchestration engine decomposes the command into an ordered action graph ï¿½ a directed acyclic graph (DAG) of tool calls where each node has defined inputs, expected outputs, and a success condition. This plan is executed node by node, with results from earlier nodes fed as inputs to later ones.
 
-?Plan preview — for multi-step tasks involving 3+ actions or any medium/high-risk action, Atlas shows the plan to the user before executing: 'Here's what I'm going to do: (1) … (2) … (3) … Confirm?'
-?Partial failure handling — if a node fails, Atlas marks it, continues with independent downstream nodes, and reports the partial result at the end.
-?Circuit breaker — if the same tool call fails 3 consecutive times, Atlas aborts that branch and notifies the user.
-?State persistence — multi-step task state is saved to PostgreSQL after each successful node, so Atlas can resume after a crash or disconnect.
+?Plan preview ï¿½ for multi-step tasks involving 3+ actions or any medium/high-risk action, Atlas shows the plan to the user before executing: 'Here's what I'm going to do: (1) ï¿½ (2) ï¿½ (3) ï¿½ Confirm?'
+?Partial failure handling ï¿½ if a node fails, Atlas marks it, continues with independent downstream nodes, and reports the partial result at the end.
+?Circuit breaker ï¿½ if the same tool call fails 3 consecutive times, Atlas aborts that branch and notifies the user.
+?State persistence ï¿½ multi-step task state is saved to PostgreSQL after each successful node, so Atlas can resume after a crash or disconnect.
 
 10.2 Memory Architecture
 Layer	Storage	Scope	TTL	Example Content
@@ -529,11 +529,11 @@ Skill cache	Redis	Hot path	1 hour	Recently used skill definitions loaded in memo
 10.3 Skill System
 Skills are reusable, parameterised behaviour patterns defined in YAML. They allow Atlas to execute complex repeated tasks without re-reasoning from scratch every time. Skills are the primary mechanism for the user to customise Atlas's behaviour without writing code.
 
-?Built-in skills (v1.0) — morning briefing, inbox triage, payment alert, meeting reminder, weekly revenue summary, daily end-of-day report.
-?User-defined skills — 'Atlas, whenever I say project update, send a status email to the client with the following template…'
-?Skill learning — Atlas can watch a user complete a multi-step task and offer to save it as a skill: 'You do this often. Want me to save it as a skill called Project Invoice?'
-?Skill invocation — triggered by keyword match, schedule, webhook event, or explicit call.
-?Skill parameters — skills accept runtime parameters injected at invocation ('invoice for ?50,000 to Dana').
+?Built-in skills (v1.0) ï¿½ morning briefing, inbox triage, payment alert, meeting reminder, weekly revenue summary, daily end-of-day report.
+?User-defined skills ï¿½ 'Atlas, whenever I say project update, send a status email to the client with the following templateï¿½'
+?Skill learning ï¿½ Atlas can watch a user complete a multi-step task and offer to save it as a skill: 'You do this often. Want me to save it as a skill called Project Invoice?'
+?Skill invocation ï¿½ triggered by keyword match, schedule, webhook event, or explicit call.
+?Skill parameters ï¿½ skills accept runtime parameters injected at invocation ('invoice for ?50,000 to Dana').
 
 
 11. Non-Functional Requirements
@@ -544,7 +544,7 @@ Performance	PC worker round-trip (file read)	< 2s	< 1s
 Performance	Paystack balance fetch	< 3s	< 2s
 Reliability	VPS process uptime	> 99.5%	> 99.9%
 Reliability	Auto-retry on transient API failure	3 attempts, exp. backoff	5 attempts, exp. backoff
-Reliability	Task state persistence on crash	Yes — PostgreSQL	Yes — PostgreSQL + Redis snapshot
+Reliability	Task state persistence on crash	Yes ï¿½ PostgreSQL	Yes ï¿½ PostgreSQL + Redis snapshot
 Scalability	Concurrent task execution	3 parallel tasks	10 parallel tasks
 Storage	Total VPS storage footprint	< 5GB	< 10GB
 Storage	Episodic memory retention	90 days	Configurable (default 180 days)
@@ -562,9 +562,8 @@ Observability	Structured logging	JSON logs to file	JSON logs + optional Grafana/
 12.1 VPS Brain
 Layer	Technology	Rationale
 Runtime	Python 3.11+	Best AI/ML ecosystem; async support; rich library ecosystem
-LLM (primary)	Groq API — Llama 3.3 70B / Mixtral	Sub-second inference; free tier generous; best speed/quality ratio
-LLM (complex)	Anthropic API — Claude Sonnet	Best reasoning for multi-step planning; used selectively to control cost
-STT	Groq Whisper API / faster-whisper	Groq Whisper for speed; faster-whisper as local fallback
+LLM	Anthropic API âˆ’ Claude Haiku 4.5	Fast reasoning; cost-effective; single provider (no routing complexity); sufficient for v1.0 tasks
+STT	faster-whisper (local) / Groq Whisper (future)	faster-whisper for v1.0; Groq Whisper planned for post-v1.0 optimization
 Orchestration	LangGraph (state machine) or custom DAG	Structured multi-step agent with state persistence and branch handling
 Vector memory	ChromaDB (embedded)	No server; persistent; fast semantic search; Python-native
 Structured DB	PostgreSQL + SQLAlchemy	Reliable; ACID; good async support; handles CRM and audit log
@@ -579,7 +578,7 @@ Paystack	httpx (async) + custom adapter	Official SDK lacks async; httpx with a c
 Web search	Brave Search API / SerpAPI	Privacy-respecting; fast; structured JSON results
 Web fetch	Trafilatura + httpx	Best-in-class article extraction; removes boilerplate
 Credential vault	keyring + cryptography (AES-256)	OS keyring primary; encrypted file vault fallback for VPS headless
-Tunnel (webhooks)	Cloudflare Tunnel (cloudflared)	No port forwarding; TLS; free; stable for webhook ingestion
+Tunnel (webhooks)	Cloudflare Tunnel (cloudflared) [Future]	No port forwarding; TLS; free; stable for webhook ingestion â€” planned for Layer N
 Process management	systemd + supervisor	Auto-restart on crash; startup on boot; log rotation
 
 12.2 PC Worker
@@ -630,14 +629,14 @@ CRM & Ops	v2.0a	Personal CRM, invoice generation, deal pipeline, auto follow-up	
 Social & Research	v2.0b	Twitter/LinkedIn posting, topic monitoring, deep research, meeting prep	Week 31-33
 Browser Automation	v2.0c	Playwright integration on PC worker, form filling, web scraping	Week 34-36
 Health & Productivity	v2.0d	Habit logging, time-blocking, focus sessions, end-of-day reports	Week 37-38
-v2.0 Release	v2.0	Full autonomous agent — all features, multi-agent architecture, Notion sync	Week 40
+v2.0 Release	v2.0	Full autonomous agent ï¿½ all features, multi-agent architecture, Notion sync	Week 40
 
 
 14. Open Questions & Decision Points
 Question	Options	Decision Needed By
 LLM cost management strategy	Token budget per day vs per-request routing logic vs local Ollama fallback for cheap tasks	v0.2
-VPS provider and specs	Hetzner (recommended) vs DigitalOcean vs AWS Lightsail — min 4 vCPU / 8GB RAM recommended	v0.1
-Paystack transfer confirmation UX	Typed passphrase vs Telegram inline PIN vs OTP via SMS — typed passphrase is simplest to implement	v0.6
+VPS provider and specs	Hetzner (recommended) vs DigitalOcean vs AWS Lightsail ï¿½ min 4 vCPU / 8GB RAM recommended	v0.1
+Paystack transfer confirmation UX	Typed passphrase vs Telegram inline PIN vs OTP via SMS ï¿½ typed passphrase is simplest to implement	v0.6
 WhatsApp session management	Personal number (risk of ban) vs dedicated number (costs ~?3k/month SIM) vs WhatsApp Business API (official, higher cost)	v0.7
 Mobile worker distribution	Expo Go (dev only) vs TestFlight/APK sideload vs full App Store release	v0.9
 Backup strategy	VPS snapshots only vs encrypted VPS-to-S3 daily vs user-managed external backup	v0.2
@@ -650,13 +649,13 @@ Atlas voice persona	Stick with Piper TTS stock voice vs invest in fine-tuned cus
 15. Edge Cases & Failure Mode Master Reference
 15.1 Voice & Command Parsing
 Scenario	Atlas Behaviour
-Ambiguous command: 'send it'	Asks: 'Send what — the last email draft, or the FundMatch proposal?'
-Multiple intents in one message	Decomposes, shows plan, confirms before executing: 'I'll do 3 things. Here's the plan…'
+Ambiguous command: 'send it'	Asks: 'Send what ï¿½ the last email draft, or the FundMatch proposal?'
+Multiple intents in one message	Decomposes, shows plan, confirms before executing: 'I'll do 3 things. Here's the planï¿½'
 Unrecognised command	Responds: 'I'm not sure how to do that yet. Want me to search for instructions or log this as a feature request?'
-Name disambiguation: 'email John'	Asks: 'Which John — John Doe at Efishient, or John Smith from the April call?'
-Voice note — low audio quality	If confidence < 75%, Atlas replies: 'I had trouble understanding that. Can you rephrase or type it?'
+Name disambiguation: 'email John'	Asks: 'Which John ï¿½ John Doe at Efishient, or John Smith from the April call?'
+Voice note ï¿½ low audio quality	If confidence < 75%, Atlas replies: 'I had trouble understanding that. Can you rephrase or type it?'
 Very long compound command	Atlas acknowledges receipt, shows decomposed plan, confirms before starting execution
-Command contradicts a previous command	Atlas surfaces the contradiction: 'Earlier you asked me to X. This conflicts — which do you prefer?'
+Command contradicts a previous command	Atlas surfaces the contradiction: 'Earlier you asked me to X. This conflicts ï¿½ which do you prefer?'
 
 15.2 Agentic & Multi-Step Tasks
 Scenario	Atlas Behaviour
@@ -698,13 +697,13 @@ PC Worker	A lightweight background daemon on the user's laptop that executes fil
 Procedural memory	Stored skill definitions and workflow templates that tell Atlas how to perform recurring tasks
 Scoped roots	User-defined directories that the PC worker is permitted to access; all others are blocked
 Skill	A reusable, parameterised action pattern defined in YAML, triggered by keyword, schedule, or event
-STT	Speech-to-Text — converts audio input (voice notes) into a text transcript for processing
-TTS	Text-to-Speech — converts Atlas's text responses into spoken audio output
-VPS Brain	The cloud VPS server that hosts Atlas's orchestration engine, LLM, memory, and integrations — always on
+STT	Speech-to-Text ï¿½ converts audio input (voice notes) into a text transcript for processing
+TTS	Text-to-Speech ï¿½ converts Atlas's text responses into spoken audio output
+VPS Brain	The cloud VPS server that hosts Atlas's orchestration engine, LLM, memory, and integrations ï¿½ always on
 WebSocket	A persistent, bidirectional network connection used for real-time communication between the VPS and local workers
 Working memory	In-process, single-request context that is discarded after each task completes
 
 
 
-Document prepared by Duke  ·  NextGen Africa / Virusia Academy
-Atlas PRD v2.0  ·  April 2026  ·  Confidential — internal use only
+Document prepared by Duke  ï¿½  NextGen Africa / Virusia Academy
+Atlas PRD v2.0  ï¿½  April 2026  ï¿½  Confidential ï¿½ internal use only
