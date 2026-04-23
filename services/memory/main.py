@@ -20,6 +20,7 @@ Endpoints:
 
 import os
 import logging
+import asyncio
 from contextlib import asynccontextmanager
 from typing import Optional, List, Dict, Any
 
@@ -132,6 +133,29 @@ http_client: Optional[httpx.AsyncClient] = None
 
 # ─── LIFESPAN ──────────────────────────────────────────────────────────────────
 
+async def _init_db_with_retry(max_retries: int = 5, initial_delay: float = 1.0):
+    """Initialize database with exponential backoff retry."""
+    delay = initial_delay
+    last_error = None
+    
+    for attempt in range(max_retries):
+        try:
+            logger.info(f"Attempting database connection (attempt {attempt + 1}/{max_retries})...")
+            await init_memory_schema(DATABASE_URL)
+            logger.info("✓ PostgreSQL initialized successfully")
+            return
+        except Exception as e:
+            last_error = e
+            if attempt < max_retries - 1:
+                logger.warning(f"Connection failed: {e}. Retrying in {delay}s...")
+                await asyncio.sleep(delay)
+                delay *= 2  # Exponential backoff
+            else:
+                logger.error(f"Failed to connect after {max_retries} attempts")
+    
+    raise last_error
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup and shutdown logic."""
@@ -140,11 +164,10 @@ async def lifespan(app: FastAPI):
     logger.info("🚀 Memory Service starting up...")
     
     try:
-        # Initialize database
+        # Initialize database with retry logic
         db_engine = create_async_engine(DATABASE_URL, echo=False)
         SessionLocal = sessionmaker(db_engine, class_=AsyncSession, expire_on_commit=False)
-        await init_memory_schema(DATABASE_URL)
-        logger.info("✓ PostgreSQL initialized")
+        await _init_db_with_retry()
         
         # Initialize memory system
         memory_system = MemorySystem(
