@@ -23,7 +23,6 @@ except ImportError:
 
 try:
     import chromadb
-    from chromadb.config import Settings
     CHROMADB_AVAILABLE = True
 except ImportError:
     CHROMADB_AVAILABLE = False
@@ -149,16 +148,10 @@ class VectorMemoryStore:
             return
         
         def _init():
-            # Connect to ChromaDB via HTTP
-            settings = Settings(
-                chroma_db_impl="duckdb+parquet",
-                persist_directory="/chroma_data",
-                anonymized_telemetry=False,
-            )
+            # Connect to ChromaDB via HTTP (new API - no Settings needed)
             client = chromadb.HttpClient(
                 host=self.chroma_host,
-                port=self.chroma_port,
-                settings=settings
+                port=self.chroma_port
             )
             
             # Create/get collections with metadata
