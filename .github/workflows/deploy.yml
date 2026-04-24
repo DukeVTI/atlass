@@ -11,12 +11,37 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
       - name: Setup SSH agent
         uses: webfactory/ssh-agent@v0.8.0
         with:
           ssh-private-key: ${{ secrets.VPS_SSH_KEY }}
 
-      - name: Deploy via SSH
+      - name: Deploy
         run: |
-          ssh-keyscan -H ${{ secrets.VPS_HOST }} >> ~/.ssh/known_hosts 2>/dev/null
-          ssh ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} 'cd ~/Atlas && git pull origin main && docker compose -f docker-compose.yml -f docker-compose.prod.yml build && docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d && echo "Deployment complete! ✅"'
+          mkdir -p ~/.ssh
+          ssh-keyscan -H ${{ secrets.VPS_HOST }} >> ~/.ssh/known_hosts 2>/dev/null || true
+          
+          # Create deployment script
+          cat > /tmp/deploy.sh << 'SCRIPT_EOF'
+          #!/bin/bash
+          set -e
+          echo "Starting deployment..."
+          cd ~/Atlas || { mkdir -p ~/Atlas && cd ~/Atlas; }
+          
+          if [ ! -d ".git" ]; then
+            git clone https://github.com/${{ github.repository }}.git .
+          fi
+          
+          git fetch origin main
+          git reset --hard origin/main
+          
+          docker compose -f docker-compose.yml -f docker-compose.prod.yml build
+          docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+          echo "✅ Deployment complete!"
+          SCRIPT_EOF
+          
+          # Execute on VPS
+          ssh -o StrictHostKeyChecking=accept-new ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} 'bash -s' < /tmp/deploy.sh
