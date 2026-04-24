@@ -11,36 +11,40 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Deploy via SSH
-        uses: appleboy/ssh-action@v1.8.0
+      - name: Setup SSH agent
+        uses: webfactory/ssh-agent@v0.8.0
         with:
-          host: ${{ secrets.VPS_HOST }}
-          username: ${{ secrets.VPS_USER }}
-          key: ${{ secrets.VPS_SSH_KEY }}
-          # The script below runs directly on your VPS
-          script: |
-            echo "Deploying Atlas to VPS..."
-            
-            # Ensure the directory exists
-            mkdir -p ~/Atlas
-            cd ~/Atlas
-            
-            export REPO_URL="https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"
-            
-            # If this is the first deploy, clone; otherwise update
-            if [ ! -d ".git" ]; then
-              echo "First deploy: cloning repository..."
-              git clone $REPO_URL .
-            else
-              echo "Updating existing repository..."
-              git remote set-url origin $REPO_URL
-              git fetch origin main
-              git reset --hard origin/main
-            fi
-            
-            # Build and restart containers using production overrides
-            echo "Rebuilding and restarting Docker containers..."
-            docker compose -f docker-compose.yml -f docker-compose.prod.yml build
-            docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
-            
-            echo "Deployment complete! ✅"
+          ssh-private-key: ${{ secrets.VPS_SSH_KEY }}
+
+      - name: Deploy via SSH
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -H ${{ secrets.VPS_HOST }} >> ~/.ssh/known_hosts 2>/dev/null
+          
+          ssh -o StrictHostKeyChecking=no ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} << 'EOF'
+          echo "Deploying Atlas to VPS..."
+          
+          # Ensure the directory exists
+          mkdir -p ~/Atlas
+          cd ~/Atlas
+          
+          export REPO_URL="https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"
+          
+          # If this is the first deploy, clone; otherwise update
+          if [ ! -d ".git" ]; then
+            echo "First deploy: cloning repository..."
+            git clone $REPO_URL .
+          else
+            echo "Updating existing repository..."
+            git remote set-url origin $REPO_URL
+            git fetch origin main
+            git reset --hard origin/main
+          fi
+          
+          # Build and restart containers using production overrides
+          echo "Rebuilding and restarting Docker containers..."
+          docker compose -f docker-compose.yml -f docker-compose.prod.yml build
+          docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+          
+          echo "Deployment complete! ✅"
+          EOF
