@@ -44,6 +44,7 @@ from memory import (
     cleanup_expired_memories,
     EpisodicMemoryRecord,
     FactualMemoryRecord,
+    ConversationMemoryRecord,
 )
 
 logger = logging.getLogger(__name__)
@@ -196,7 +197,6 @@ async def lifespan(app: FastAPI):
         async with SessionLocal() as session:
             # Initialize memory system with database session
             memory_system = MemorySystem(
-                db_session=session,
                 embedding_model="all-MiniLM-L6-v2",
                 use_pgvector=True
             )
@@ -311,13 +311,33 @@ async def store_episodic(request: StoreEpisodicRequest):
             "ttl_days": request.ttl_days,
         }
         
-        # Store in embeddings + ChromaDB
-        await memory_system.remember_event(
-            user_id=request.user_id,
-            memory_id=memory_id,
-            summary=request.summary,
-            metadata=metadata
-        )
+        # 1. First, INSERT the record into Postgres
+        from datetime import datetime
+        async with SessionLocal() as session:
+            record = EpisodicMemoryRecord(
+                id=memory_id,
+                user_id=request.user_id,
+                event_type=request.event_type,
+                summary=request.summary,
+                full_context=request.full_context,
+                timestamp=datetime.utcnow(),
+                tags=request.tags,
+                source=request.source,
+                reference_id=request.reference_id,
+                ttl_days=request.ttl_days
+            )
+            session.add(record)
+            await session.commit()
+
+        # 2. Then, generate and store embedding via MemorySystem
+        async with SessionLocal() as session:
+            await memory_system.remember_event(
+                db_session=session,
+                user_id=request.user_id,
+                memory_id=memory_id,
+                summary=request.summary,
+                metadata=metadata
+            )
         
         logger.info(f"✓ Stored episodic memory: {memory_id} ({request.event_type})")
         
@@ -450,17 +470,56 @@ async def store_conversation(request: StoreConversationRequest):
         import uuid
         turn_id = str(uuid.uuid4())
         
-        await memory_system.remember_conversation(
-            user_id=request.user_id,
-            session_id=request.session_id,
-            turn_id=turn_id,
-            user_text=request.user_message,
-            assistant_text=request.assistant_response,
-            metadata={
-                "turn_number": request.turn_number,
-                "tool_calls": request.tool_calls
-            }
-        )
+        # 1. First, ensure the conversation record exists in Postgres
+        from datetime import datetime
+        async with SessionLocal() as session:
+            from sqlalchemy import select
+            # Check if session exists
+            stmt = select(ConversationMemoryRecord).where(
+                (ConversationMemoryRecord.user_id == request.user_id) &
+                (ConversationMemoryRecord.session_id == request.session_id)
+            )
+            result = await session.execute(stmt)
+            record = result.scalars().first()
+            
+            if not record:
+                # Create new session record
+                record = ConversationMemoryRecord(
+                    id=str(uuid.uuid4()),
+                    user_id=request.user_id,
+                    session_id=request.session_id,
+                    turns_json=[],
+                    started_at=datetime.utcnow()
+                )
+                session.add(record)
+            
+            # Update turns and timestamp
+            turns = record.turns_json or []
+            turns.append({
+                "user": request.user_message,
+                "assistant": request.assistant_response,
+                "timestamp": datetime.utcnow().isoformat(),
+                "tools": request.tool_calls
+            })
+            record.turns_json = turns
+            record.last_turn_at = datetime.utcnow()
+            
+            await session.commit()
+
+        # 2. Then, generate and store embedding via MemorySystem
+        async with SessionLocal() as session:
+            await memory_system.remember_conversation(
+                db_session=session,
+                user_id=request.user_id,
+                session_id=request.session_id,
+                turn_id=turn_id,
+                user_text=request.user_message,
+                assistant_text=request.assistant_response,
+                metadata={
+                    "turn_number": request.turn_number,
+                    "tool_calls": request.tool_calls
+                }
+            )
         
         logger.info(f"✓ Stored conversation turn: {turn_id}")
         
@@ -487,12 +546,14 @@ async def get_conversation_history(
     
     try:
         # Retrieve last 10 turns from conversation history
-        results = await memory_system.recall_conversation(
-            user_id=user_id,
-            session_id=session_id,
-            query="",  # Empty query to get full history
-            top_k=10
-        )
+        async with SessionLocal() as session:
+            results = await memory_system.recall_conversation(
+                db_session=session,
+                user_id=user_id,
+                session_id=session_id,
+                query="",  # Empty query to get full history
+                top_k=10
+            )
         
         return {
             "session_id": session_id,
@@ -523,22 +584,25 @@ async def get_memory_context(
     try:
         search_query = query or "general context"
         
-        # Recall relevant episodic memories
-        episodic = await memory_system.recall_events(
-            user_id=user_id,
-            query=search_query,
-            top_k=5
-        )
-        
-        # Recall conversation context if session provided
-        conversation = []
-        if session_id:
-            conversation = await memory_system.recall_conversation(
+        async with SessionLocal() as session:
+            # Recall relevant episodic memories
+            episodic = await memory_system.recall_events(
+                db_session=session,
                 user_id=user_id,
-                session_id=session_id,
                 query=search_query,
-                top_k=3
+                top_k=5
             )
+            
+            # Recall conversation context if session provided
+            conversation = []
+            if session_id:
+                conversation = await memory_system.recall_conversation(
+                    db_session=session,
+                    user_id=user_id,
+                    session_id=session_id,
+                    query=search_query,
+                    top_k=3
+                )
         
         # Format for LLM injection
         context = ""

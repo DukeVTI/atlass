@@ -117,20 +117,18 @@ class VectorMemoryStore:
     Provides semantic similarity search with native PostgreSQL support.
     """
     
-    def __init__(self, db_session: AsyncSession, use_pgvector: bool = True):
+    def __init__(self, use_pgvector: bool = True):
         """
         Initialize PostgreSQL vector store.
         
         Args:
-            db_session: Active AsyncSession connection
             use_pgvector: Whether to use pgvector (True) or JSONB fallback (False)
         """
-        self.db_session = db_session
         self.use_pgvector = use_pgvector
         self._init_done = False
         logger.info(f"VectorMemoryStore initialized (pgvector={use_pgvector})")
     
-    async def initialize(self) -> None:
+    async def initialize(self, db_session: AsyncSession) -> None:
         """Check pgvector extension availability and configure accordingly."""
         if self._init_done:
             return
@@ -138,7 +136,7 @@ class VectorMemoryStore:
         try:
             # Try to use pgvector if available
             if self.use_pgvector:
-                result = await self.db_session.execute(
+                result = await db_session.execute(
                     text("SELECT 1 FROM pg_extension WHERE extname='vector'")
                 )
                 if not result.scalar():
@@ -168,30 +166,21 @@ class VectorMemoryStore:
     
     async def store_episodic(
         self,
+        db_session: AsyncSession,
         user_id: int,
         memory_id: str,
-        text: str,
+        text_summary: str,
         embedding: List[float],
         metadata: Optional[Dict[str, Any]] = None
     ) -> None:
         """
         Store episodic memory with embedding in PostgreSQL.
-        
-        Args:
-            user_id: User ID for scoping
-            memory_id: Unique memory identifier
-            text: Summary text for search
-            embedding: Pre-computed embedding vector
-            metadata: Additional metadata to store
         """
         if not self._init_done:
-            await self.initialize()
+            await self.initialize(db_session)
         
-        # Store embedding as JSONB (always works)
         embedding_json = json.dumps(embedding)
         
-        # SQL to update embedding in existing episodic_memory record
-        # (The record should already exist in the database, we're just updating the embedding)
         stmt = text(
             """
             UPDATE episodic_memory 
@@ -200,15 +189,15 @@ class VectorMemoryStore:
             """
         )
         
-        await self.db_session.execute(
+        await db_session.execute(
             stmt,
             {"embedding_json": embedding_json, "memory_id": memory_id, "user_id": user_id}
         )
-        await self.db_session.commit()
-        logger.debug(f"Stored episodic memory embedding: {memory_id}")
+        await db_session.commit()
     
     async def store_conversation(
         self,
+        db_session: AsyncSession,
         user_id: int,
         turn_id: str,
         user_text: str,
@@ -218,19 +207,10 @@ class VectorMemoryStore:
     ) -> None:
         """
         Store conversation turn with embeddings.
-        
-        Args:
-            user_id: User ID for scoping
-            turn_id: Unique turn identifier
-            user_text: User's message
-            assistant_text: Assistant's response
-            embeddings: Tuple of (user_embedding, assistant_embedding)
-            metadata: Additional metadata
         """
         if not self._init_done:
-            await self.initialize()
+            await self.initialize(db_session)
         
-        # Store the assistant embedding (more relevant for context)
         assistant_embedding = embeddings[1] if len(embeddings) > 1 else embeddings[0]
         embedding_json = json.dumps(assistant_embedding)
         
@@ -242,15 +222,15 @@ class VectorMemoryStore:
             """
         )
         
-        await self.db_session.execute(
+        await db_session.execute(
             stmt,
             {"embedding_json": embedding_json, "turn_id": turn_id, "user_id": user_id}
         )
-        await self.db_session.commit()
-        logger.debug(f"Stored conversation turn embedding: {turn_id}")
+        await db_session.commit()
     
     async def search_episodic(
         self,
+        db_session: AsyncSession,
         user_id: int,
         query: str,
         embedding: List[float],
@@ -258,18 +238,9 @@ class VectorMemoryStore:
     ) -> List[Dict[str, Any]]:
         """
         Search episodic memories by semantic similarity using PostgreSQL.
-        
-        Args:
-            user_id: User ID for scoping
-            query: Query text (for logging)
-            embedding: Query embedding vector
-            top_k: Number of results to return
-            
-        Returns:
-            List of matching memories with scores
         """
         if not self._init_done:
-            await self.initialize()
+            await self.initialize(db_session)
         
         embedding_json = json.dumps(embedding)
         
@@ -295,7 +266,7 @@ class VectorMemoryStore:
         )
         
         try:
-            result = await self.db_session.execute(
+            result = await db_session.execute(
                 stmt,
                 {"user_id": user_id, "embedding": embedding_json, "top_k": top_k}
             )
@@ -325,7 +296,7 @@ class VectorMemoryStore:
                 """
             )
             
-            result = await self.db_session.execute(
+            result = await db_session.execute(
                 stmt_fallback,
                 {"user_id": user_id}
             )
@@ -353,6 +324,7 @@ class VectorMemoryStore:
     
     async def search_conversation(
         self,
+        db_session: AsyncSession,
         user_id: int,
         session_id: str,
         embedding: List[float],
@@ -360,18 +332,9 @@ class VectorMemoryStore:
     ) -> List[Dict[str, Any]]:
         """
         Search conversation history by semantic similarity.
-        
-        Args:
-            user_id: User ID for scoping
-            session_id: Session/chat ID
-            embedding: Query embedding vector
-            top_k: Number of results to return
-            
-        Returns:
-            List of matching conversation turns
         """
         if not self._init_done:
-            await self.initialize()
+            await self.initialize(db_session)
         
         embedding_json = json.dumps(embedding)
         
@@ -385,7 +348,7 @@ class VectorMemoryStore:
             """
         )
         
-        result = await self.db_session.execute(
+        result = await db_session.execute(
             stmt,
             {"user_id": user_id, "session_id": session_id}
         )
@@ -416,15 +379,12 @@ class VectorMemoryStore:
         logger.debug(f"Found {len(matches)} conversation turns for session {session_id}")
         return matches
     
-    async def delete_user_memories(self, user_id: int) -> None:
+    async def delete_user_memories(self, db_session: AsyncSession, user_id: int) -> None:
         """
-        Delete all memories for a user (GDPR cleanup, testing).
-        
-        Args:
-            user_id: User ID to delete
+        Delete all memories for a user.
         """
         if not self._init_done:
-            await self.initialize()
+            await self.initialize(db_session)
         
         stmt = text(
             """
@@ -433,8 +393,8 @@ class VectorMemoryStore:
             """
         )
         
-        await self.db_session.execute(stmt, {"user_id": user_id})
-        await self.db_session.commit()
+        await db_session.execute(stmt, {"user_id": user_id})
+        await db_session.commit()
         logger.info(f"Deleted all memories for user {user_id}")
 
 
@@ -450,35 +410,29 @@ class MemorySystem:
     
     def __init__(
         self,
-        db_session: AsyncSession,
         embedding_model: str = "all-MiniLM-L6-v2",
         use_pgvector: bool = True
     ):
         """
         Initialize memory system.
-        
-        Args:
-            db_session: Active AsyncSession connection
-            embedding_model: Sentence transformer model to use
-            use_pgvector: Whether to use pgvector extension if available
         """
         self.embeddings = EmbeddingEngine(embedding_model)
-        self.vector_store = VectorMemoryStore(db_session, use_pgvector)
-        self.db_session = db_session
+        self.vector_store = VectorMemoryStore(use_pgvector)
         self._init_done = False
     
-    async def initialize(self) -> None:
+    async def initialize(self, db_session: AsyncSession) -> None:
         """Initialize both embeddings and vector store."""
         if self._init_done:
             return
         
         await self.embeddings.initialize()
-        await self.vector_store.initialize()
+        await self.vector_store.initialize(db_session)
         self._init_done = True
-        logger.info("✓ Memory system fully initialized (PostgreSQL + pgvector)")
+        logger.info("✓ Memory system fully initialized")
     
     async def remember_event(
         self,
+        db_session: AsyncSession,
         user_id: int,
         memory_id: str,
         summary: str,
@@ -486,46 +440,34 @@ class MemorySystem:
     ) -> None:
         """
         Store an episodic memory event.
-        
-        Args:
-            user_id: User ID
-            memory_id: Unique memory ID
-            summary: Event summary for embedding
-            metadata: Additional context
         """
         if not self._init_done:
-            await self.initialize()
+            await self.initialize(db_session)
         
         embedding = await self.embeddings.embed(summary)
         await self.vector_store.store_episodic(
-            user_id, memory_id, summary, embedding, metadata
+            db_session, user_id, memory_id, summary, embedding, metadata
         )
     
     async def recall_events(
         self,
+        db_session: AsyncSession,
         user_id: int,
         query: str,
         top_k: int = 5
     ) -> List[Dict[str, Any]]:
         """
         Search for relevant episodic memories.
-        
-        Args:
-            user_id: User ID
-            query: Search query
-            top_k: Number of results
-            
-        Returns:
-            List of relevant memories
         """
         if not self._init_done:
-            await self.initialize()
+            await self.initialize(db_session)
         
         embedding = await self.embeddings.embed(query)
-        return await self.vector_store.search_episodic(user_id, query, embedding, top_k)
+        return await self.vector_store.search_episodic(db_session, user_id, query, embedding, top_k)
     
     async def remember_conversation(
         self,
+        db_session: AsyncSession,
         user_id: int,
         session_id: str,
         turn_id: str,
@@ -535,28 +477,21 @@ class MemorySystem:
     ) -> None:
         """
         Store a conversation turn with embeddings.
-        
-        Args:
-            user_id: User ID
-            session_id: Conversation session ID
-            turn_id: Turn identifier
-            user_text: User's message
-            assistant_text: Assistant's response
-            metadata: Additional context
         """
         if not self._init_done:
-            await self.initialize()
+            await self.initialize(db_session)
         
         meta = metadata or {}
         meta["session_id"] = session_id
         
         embeddings = await self.embeddings.embed_batch([user_text, assistant_text])
         await self.vector_store.store_conversation(
-            user_id, turn_id, user_text, assistant_text, tuple(embeddings), meta
+            db_session, user_id, turn_id, user_text, assistant_text, tuple(embeddings), meta
         )
     
     async def recall_conversation(
         self,
+        db_session: AsyncSession,
         user_id: int,
         session_id: str,
         query: str,
@@ -564,25 +499,11 @@ class MemorySystem:
     ) -> List[Dict[str, Any]]:
         """
         Search conversation history for context.
-        
-        Args:
-            user_id: User ID
-            session_id: Session ID
-            query: Search query
-            top_k: Number of results
-            
-        Returns:
-            List of relevant conversation turns
         """
         if not self._init_done:
-            await self.initialize()
+            await self.initialize(db_session)
         
         embedding = await self.embeddings.embed(query)
         return await self.vector_store.search_conversation(
-            user_id, session_id, embedding, top_k
-        )
-        
-        embedding = await self.embeddings.embed(query)
-        return await self.vector_store.search_conversation(
-            user_id, session_id, embedding, top_k
+            db_session, user_id, session_id, embedding, top_k
         )

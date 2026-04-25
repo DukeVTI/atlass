@@ -18,7 +18,7 @@ class ToolRegistry:
     def get_schemas(self) -> list[dict]:
         return [tool.schema for tool in self._tools.values()]
 
-    async def execute(self, tool_name: str, inputs: dict) -> str:
+    async def execute(self, tool_name: str, inputs: dict, user_id: str = "duke") -> str:
         """
         Executes a registered tool. Plugs into the Security Gate.
         """
@@ -31,7 +31,7 @@ class ToolRegistry:
         if tool.is_destructive:
             confirm_id = await ConfirmationManager.intercept(tool_name, inputs)
             # Log as 'paused'
-            await self._audit_log(tool_name, inputs, "paused", f"Action paused. Confirmation ID: {confirm_id}")
+            await self._audit_log(tool_name, inputs, "paused", f"Action paused. Confirmation ID: {confirm_id}", user_id)
             return confirm_id
 
         try:
@@ -39,7 +39,7 @@ class ToolRegistry:
             serialized_result = json.dumps(result) if isinstance(result, (dict, list)) else str(result)
             
             # Fire-and-forget Audit Log
-            await self._audit_log(tool_name, inputs, "success", serialized_result)
+            await self._audit_log(tool_name, inputs, "success", serialized_result, user_id)
             
             return serialized_result
         except Exception as exc:
@@ -47,20 +47,18 @@ class ToolRegistry:
             error_msg = f"Error executing {tool_name}: {str(exc)}"
             
             # Log failure to Audit Log
-            await self._audit_log(tool_name, inputs, "error", error_msg)
+            await self._audit_log(tool_name, inputs, "error", error_msg, user_id)
             
             return error_msg
 
-    async def _audit_log(self, tool_name: str, inputs: dict, status: str, result: str):
+    async def _audit_log(self, tool_name: str, inputs: dict, status: str, result: str, user_id: str):
         """
         Sends tool execution metadata to the central API audit endpoint.
         """
         api_url = f"{os.getenv('API_BASE_URL', 'http://api:8000')}/audit"
         
-        # We don't have user_id in the registry yet, setting as 'system' or 'default'
-        # Layer 1 users are single-user (Duke), so 'duke' is fine.
         payload = {
-            "user_id": "duke",
+            "user_id": user_id,
             "tool_name": tool_name,
             "inputs": inputs,
             "status": status,

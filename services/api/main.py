@@ -21,7 +21,7 @@ from contextlib import asynccontextmanager
 import asyncpg
 import chromadb
 import redis.asyncio as aioredis
-from fastapi import FastAPI, Request, Header, HTTPException
+from fastapi import FastAPI, Request, Header, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
 import hmac
 import hashlib
@@ -215,3 +215,86 @@ async def log_audit(request: Request):
     except Exception as e:
         logger.error(f"Audit Log write failure: {e}")
         raise HTTPException(status_code=500, detail="Failed to write to audit log")
+
+# ─── WebSocket Hub ────────────────────────────────────────────────────────────
+
+class ConnectionManager:
+    """Manages active WebSocket connections from PC and Mobile workers."""
+    def __init__(self):
+        self.active_connections: Dict[str, WebSocket] = {}
+
+    async def connect(self, worker_id: str, websocket: WebSocket):
+        await websocket.accept()
+        self.active_connections[worker_id] = websocket
+        logger.info(f"Worker connected: {worker_id}. Total active: {len(self.active_connections)}")
+
+    def disconnect(self, worker_id: str):
+        if worker_id in self.active_connections:
+            del self.active_connections[worker_id]
+            logger.info(f"Worker disconnected: {worker_id}")
+
+    async def send_command(self, worker_id: str, command: dict):
+        if worker_id in self.active_connections:
+            await self.active_connections[worker_id].send_json(command)
+            return True
+        return False
+
+manager = ConnectionManager()
+
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket, authorization: str = Header(None)):
+    """
+    WebSocket endpoint for workers.
+    Expects 'Bearer <WORKER_TOKEN>' in Authorization header or query param.
+    """
+    # Simple token-based auth
+    expected_token = os.getenv("WORKER_TOKEN", "atlas_pc_worker_secret")
+    
+    # Check header or query param
+    token = authorization
+    if not token:
+        token = websocket.query_params.get("token")
+    
+    if not token or (token != f"Bearer {expected_token}" and token != expected_token):
+        logger.warning("Rejected WebSocket connection: Invalid token.")
+        await websocket.close(code=1008)
+        return
+
+    worker_id = "unknown"
+    try:
+        # First message should be identity
+        data = await websocket.receive_json()
+        if data.get("type") == "identity":
+            worker_id = f"{data.get('worker_type')}:{data.get('name')}"
+            await manager.connect(worker_id, websocket)
+            
+            # Keep connection alive and listen for responses
+            while True:
+                response = await websocket.receive_json()
+                logger.info(f"Response from {worker_id}: {response.get('status')}")
+                
+                # In Layer 2, we just log responses. 
+                # Layer 3/4 would route these back to the orchestrator via Redis or Callback.
+                # For now, we'll push to Redis for visibility.
+                try:
+                    r = aioredis.from_url(os.environ["REDIS_URL"])
+                    await r.rpush(f"atlas:responses:{worker_id}", json.dumps(response))
+                    await r.aclose()
+                except Exception as e:
+                    logger.error(f"Failed to push worker response to Redis: {e}")
+
+    except WebSocketDisconnect:
+        manager.disconnect(worker_id)
+    except Exception as e:
+        logger.error(f"WebSocket error for {worker_id}: {e}")
+        manager.disconnect(worker_id)
+
+@app.post("/worker/command/{worker_id}", tags=["worker"])
+async def send_worker_command(worker_id: str, command: dict):
+    """
+    Endpoint for the Orchestrator to send commands to a specific worker.
+    """
+    success = await manager.send_command(worker_id, command)
+    if not success:
+        raise HTTPException(status_code=404, detail="Worker not connected")
+    return {"status": "dispatched"}

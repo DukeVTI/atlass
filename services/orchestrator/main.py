@@ -29,6 +29,7 @@ from tools.web_search import WebSearchTool
 from tools.calendar import CalendarReadTool, CalendarCreateTool
 from tools.gmail import GmailReadTool, GmailDraftTool, GmailSendTool
 from tools.paystack import PaystackBalanceTool, PaystackCustomerTool, PaystackTransactionsTool, PaystackTransferTool
+from tools.local_file import LocalFileTool
 
 # Register all tools
 registry.register(WebSearchTool())
@@ -41,6 +42,7 @@ registry.register(PaystackBalanceTool())
 registry.register(PaystackCustomerTool())
 registry.register(PaystackTransactionsTool())
 registry.register(PaystackTransferTool())
+registry.register(LocalFileTool())
 
 load_dotenv()
 
