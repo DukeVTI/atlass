@@ -200,7 +200,7 @@ async def lifespan(app: FastAPI):
                 embedding_model="all-MiniLM-L6-v2",
                 use_pgvector=True
             )
-            await memory_system.initialize()
+            await memory_system.initialize(session)
             logger.info("✓ Memory system initialized (PostgreSQL + pgvector)")
         
         # Initialize HTTP client
