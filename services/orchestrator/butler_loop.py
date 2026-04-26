@@ -117,6 +117,7 @@ class ButlerLoop:
         last_tool_signature: list[str] = []  # For circuit breaker
         identical_count = 0  # How many times the same tools were called in a row
         tools_used_in_turn: list[str] = []  # Track tools for this turn
+        pending_confirmations: list[str] = []  # Track paused actions for UI rendering
 
         tools = self.tool_schemas if self.tool_schemas else None
 
@@ -142,17 +143,22 @@ class ButlerLoop:
                     user_id,
                 )
                 
+                final_content = response["content"]
+                for cid in pending_confirmations:
+                    if f"[CONFIRM:{cid}]" not in final_content:
+                        final_content += f"\n\n[CONFIRM:{cid}]"
+
                 # Store conversation turn in memory
                 await self._store_conversation_turn(
                     user_id,
                     session_id,
                     turn_number,
                     first_user_message or "",
-                    response["content"],
+                    final_content,
                     tools_used_in_turn
                 )
                 
-                yield f"data: {json.dumps({'type': 'message', 'content': response['content']})}\n\n"
+                yield f"data: {json.dumps({'type': 'message', 'content': final_content})}\n\n"
                 return
 
             # ΓöÇΓöÇ Case 2: Claude wants to call tools ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
@@ -211,7 +217,15 @@ class ButlerLoop:
                 result = await self._execute_tool(tool_call, user_id=str(user_id))
                 tools_used_in_turn.append(tool_call.name)
                 
-                # Check if action was paused for confirmation
+                result_str = str(result)
+                if "[CONFIRM:" in result_str:
+                    try:
+                        conf_id = result_str.split("[CONFIRM:")[1].split("]")[0]
+                        pending_confirmations.append(conf_id)
+                    except Exception:
+                        pass
+                
+                # Check if action was paused for confirmation (old logic fallback)
                 if isinstance(result, str) and result.startswith("confirm_"):
                     result_msg = (
                         f"ACTION PAUSED. Confirmation ID: {result}. "
@@ -226,14 +240,14 @@ class ButlerLoop:
                     user_id,
                     tool_call.name,
                     tool_call.input,
-                    str(result)
+                    result_str
                 )
                 
                 tool_results.append(
                     {
                         "type": "tool_result",
                         "tool_use_id": tool_call.id,
-                        "content": str(result),
+                        "content": result_str,
                     }
                 )
 
@@ -262,6 +276,10 @@ class ButlerLoop:
             ]
             final = await self.claude.chat(messages=synthesis_messages)
             final_response = final["content"]
+            
+            for cid in pending_confirmations:
+                if f"[CONFIRM:{cid}]" not in final_response:
+                    final_response += f"\n\n[CONFIRM:{cid}]"
             
             # Store synthesis turn in memory
             await self._store_conversation_turn(
