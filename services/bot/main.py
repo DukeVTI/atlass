@@ -16,6 +16,7 @@ from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
     MessageHandler,
+    CallbackQueryHandler,
     filters,
 )
 
@@ -25,6 +26,7 @@ from handlers import (
     error_handler,
     handle_edited_message,
     handle_text,
+    handle_callback,
     handle_unsupported_media,
     help_command,
     start_command,
@@ -88,6 +90,9 @@ def main() -> None:
             handle_unsupported_media,
         )
     )
+
+    # Callbacks (Inline Keyboards)
+    app.add_handler(CallbackQueryHandler(handle_callback))
 
     # Edited messages
     app.add_handler(

@@ -18,7 +18,8 @@ import logging
 import os
 
 import httpx
-from telegram import Update
+import re
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.constants import ChatAction, ParseMode
 from telegram.error import Forbidden, RetryAfter, TimedOut
 from telegram.ext import ContextTypes
@@ -116,6 +117,39 @@ async def _call_orchestrator(user_id: int, username: str, message: str):
         }
 
 
+async def _process_stream(stream, bot_msg, chat):
+    """
+    Consumes the SSE generator.
+    Parses [CONFIRM:ID] tags into inline keyboards.
+    """
+    try:
+        async for event in stream:
+            if event.get("type") == "status":
+                await bot_msg.edit_text(f"⏳ {event['content']}")
+                await chat.send_action(ChatAction.TYPING)
+            else:
+                content = event["content"]
+                reply_markup = None
+                
+                # Check for confirmation tag from security.py
+                if "[CONFIRM:" in content:
+                    match = re.search(r"\[CONFIRM:([^\]]+)\]", content)
+                    if match:
+                        conf_id = match.group(1)
+                        content = content.replace(match.group(0), "").strip()
+                        keyboard = [
+                            [
+                                InlineKeyboardButton("✅ Approve", callback_data=f"approve_{conf_id}"),
+                                InlineKeyboardButton("❌ Decline", callback_data=f"reject_{conf_id}")
+                            ]
+                        ]
+                        reply_markup = InlineKeyboardMarkup(keyboard)
+                
+                await bot_msg.edit_text(_truncate(content), reply_markup=reply_markup)
+    except Exception as e:
+        logger.error("Failed to process stream loop: %s", e)
+        await bot_msg.edit_text("Something unexpected happened, sir. Please try again.")
+
 # ─── Command Handlers ─────────────────────────────────────────────────────────
 
 
@@ -210,18 +244,52 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     bot_msg = await update.message.reply_text("⏳ _Thinking..._", parse_mode=ParseMode.MARKDOWN)
 
     try:
-        async for event in _call_orchestrator(
+        stream = _call_orchestrator(
             user_id=user.id,
             username=user.username or user.first_name,
             message=message,
-        ):
-            if event.get("type") == "status":
-                await bot_msg.edit_text(f"⏳ {event['content']}")
-                await update.message.chat.send_action(ChatAction.TYPING)
-            else:
-                await bot_msg.edit_text(_truncate(event["content"]))
+        )
+        await _process_stream(stream, bot_msg, update.message.chat)
     except Exception as e:
-        logger.error("Failed to process stream: %s", e)
+        logger.error("Failed to process text stream: %s", e)
+        await bot_msg.edit_text("Something unexpected happened, sir. Please try again.")
+
+@require_auth
+async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    Handle inline keyboard button clicks for security gate actions.
+    """
+    query = update.callback_query
+    await query.answer()
+    
+    data = query.data
+    user = update.effective_user
+    
+    if data.startswith("approve_"):
+        conf_id = data.split("_")[1]
+        action_msg = f"Approve action {conf_id}"
+    elif data.startswith("reject_"):
+        conf_id = data.split("_")[1]
+        action_msg = f"Reject action {conf_id}"
+    else:
+        return
+        
+    # Remove the inline keyboard to prevent double-clicks
+    await query.edit_message_reply_markup(reply_markup=None)
+    
+    # Process it as if the user typed the command
+    await update.effective_chat.send_action(ChatAction.TYPING)
+    bot_msg = await update.effective_chat.send_message("⏳ _Processing..._", parse_mode=ParseMode.MARKDOWN)
+    
+    try:
+        stream = _call_orchestrator(
+            user_id=user.id,
+            username=user.username or user.first_name,
+            message=action_msg,
+        )
+        await _process_stream(stream, bot_msg, update.effective_chat)
+    except Exception as e:
+        logger.error("Failed to process callback stream: %s", e)
         await bot_msg.edit_text("Something unexpected happened, sir. Please try again.")
 
 

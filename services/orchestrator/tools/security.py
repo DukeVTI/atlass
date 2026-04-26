@@ -24,15 +24,15 @@ class ConfirmationManager:
         """
         confirmation_id = str(uuid.uuid4())[:8].upper() # 8-character ID for simplicity
         
-        # Cache for 10 minutes (600 seconds)
+        # Cache for 1 hour (3600 seconds)
         cache_data = {
             "tool_name": tool_name,
             "inputs": inputs
         }
-        await redis_client.setex(f"conf:{confirmation_id}", 600, json.dumps(cache_data))
+        await redis_client.setex(f"conf:{confirmation_id}", 3600, json.dumps(cache_data))
         
         logger.warning(f"Intercepted destructive action {tool_name}. Awaiting confirmation {confirmation_id}.")
-        return f"ACTION PAUSED: Awaiting explicit user confirmation for ID {confirmation_id}. Ask Duke to confirm. Do not proceed until approved."
+        return f"[CONFIRM:{confirmation_id}] ACTION PAUSED: Awaiting explicit user confirmation for ID {confirmation_id}. Ask Duke to confirm."
 
     @staticmethod
     async def get_pending_action(confirmation_id: str) -> dict | None:

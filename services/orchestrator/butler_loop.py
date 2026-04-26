@@ -4,7 +4,7 @@ Atlas Butler Loop
 The core agentic execution engine.
 
 Per AGENTS.md and PRD:
-- Maximum 3 iterations per user message
+- Maximum 7 iterations per user message
 - Circuit breaker: abort if the exact same set of tool calls is repeated
   3 times consecutively (prevents infinite loops)
 - Tools execute sequentially (parallelism is a Layer 4+ optimisation)
@@ -26,7 +26,7 @@ from claude_client import ClaudeClient, ClaudeError
 
 logger = logging.getLogger("atlas.orchestrator.butler_loop")
 
-MAX_ITERATIONS = 3
+MAX_ITERATIONS = 7
 
 # Type alias for tool functions
 ToolFn = Callable[..., Awaitable[Any]]
@@ -254,8 +254,9 @@ class ButlerLoop:
                     "role": "user",
                     "content": (
                         "[SYSTEM: You have reached the maximum number of tool calls. "
-                        "Provide the best possible answer using the information "
-                        "you have gathered so far. Be brief and honest about any gaps.]"
+                        "You MUST explicitly inform the user that you hit your internal iteration limit "
+                        "and then provide the best possible answer using the information "
+                        "you have gathered so far. Be honest about any gaps in the task.]"
                     ),
                 }
             ]
