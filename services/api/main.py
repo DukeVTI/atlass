@@ -222,14 +222,18 @@ class ConnectionManager:
     """Manages active WebSocket connections from PC and Mobile workers."""
     def __init__(self):
         self.active_connections: Dict[str, WebSocket] = {}
+        self.disconnect_times: Dict[str, float] = {}  # worker_id -> UTC timestamp
 
     async def connect(self, worker_id: str, websocket: WebSocket):
         self.active_connections[worker_id] = websocket
+        self.disconnect_times.pop(worker_id, None)  # Clear any offline record
         logger.info(f"Worker connected: {worker_id}. Total active: {len(self.active_connections)}")
 
     def disconnect(self, worker_id: str):
         if worker_id in self.active_connections:
             del self.active_connections[worker_id]
+            import time
+            self.disconnect_times[worker_id] = time.time()
             logger.info(f"Worker disconnected: {worker_id}")
 
     async def send_command(self, worker_id: str, command: dict):
@@ -237,6 +241,14 @@ class ConnectionManager:
             await self.active_connections[worker_id].send_json(command)
             return True
         return False
+
+    def get_status(self, worker_id: str) -> dict:
+        import time
+        connected = worker_id in self.active_connections
+        offline_minutes = 0.0
+        if not connected and worker_id in self.disconnect_times:
+            offline_minutes = (time.time() - self.disconnect_times[worker_id]) / 60
+        return {"connected": connected, "offline_minutes": offline_minutes}
 
 manager = ConnectionManager()
 
@@ -299,3 +311,9 @@ async def send_worker_command(worker_id: str, command: dict):
     if not success:
         raise HTTPException(status_code=404, detail="Worker not connected")
     return {"status": "dispatched"}
+
+
+@app.get("/worker/status/{worker_id}", tags=["worker"])
+async def worker_status(worker_id: str) -> dict:
+    """Returns the connection status and offline duration of a worker."""
+    return manager.get_status(worker_id)

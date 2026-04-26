@@ -35,6 +35,12 @@ from handlers import (
     status_command,
     schedule_random_briefing,
 )
+from alerts import (
+    check_payment_alerts,
+    check_email_alerts,
+    check_meeting_reminders,
+    check_worker_health,
+)
 
 load_dotenv()
 
@@ -116,6 +122,13 @@ def main() -> None:
         name="morning_briefing_scheduler",
     )
     logger.info("Morning briefing scheduler registered — trigger at 06:30 WAT daily.")
+
+    # ─── Proactive Alert Loops ───────────────────────────────────────────────────────
+    app.job_queue.run_repeating(check_payment_alerts,   interval=30,   first=10,  name="alert_payment")
+    app.job_queue.run_repeating(check_email_alerts,     interval=300,  first=60,  name="alert_email")
+    app.job_queue.run_repeating(check_meeting_reminders,interval=60,   first=30,  name="alert_meeting")
+    app.job_queue.run_repeating(check_worker_health,    interval=600,  first=120, name="alert_worker")
+    logger.info("Proactive alert loops registered (payment:30s / email:5m / meeting:1m / worker:10m).")
 
     logger.info("All handlers registered. Starting long-poll loop.")
 

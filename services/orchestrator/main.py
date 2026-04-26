@@ -213,3 +213,99 @@ async def clear_history(user_id: int) -> HistoryClearResponse:
     return HistoryClearResponse(
         status="cleared", user_id=user_id, messages_cleared=count
     )
+
+
+# ─── Internal Alert Endpoints ─────────────────────────────────────────────────
+
+
+@app.get("/alerts/emails", tags=["alerts"])
+async def get_alert_emails() -> dict:
+    """
+    Internal endpoint for the bot's email alert loop.
+    Returns recent unread emails as structured data — NO LLM involved.
+    The bot's urgency scoring algorithm does the classification.
+    """
+    import asyncio
+    from tools.google_auth import get_google_credentials
+    from googleapiclient.discovery import build
+
+    def _sync_fetch():
+        creds = get_google_credentials()
+        if not creds:
+            return []
+        service = build("gmail", "v1", credentials=creds)
+        results = service.users().messages().list(
+            userId="me",
+            q="is:unread newer_than:1h",
+            maxResults=20,
+        ).execute()
+        messages = results.get("messages", [])
+        emails = []
+        for msg in messages:
+            full = service.users().messages().get(
+                userId="me", id=msg["id"], format="metadata",
+                metadataHeaders=["From", "Subject", "Date"]
+            ).execute()
+            headers = full.get("payload", {}).get("headers", [])
+            sender = next((h["value"] for h in headers if h["name"] == "From"), "")
+            subject = next((h["value"] for h in headers if h["name"] == "Subject"), "")
+            emails.append({
+                "id": msg["id"],
+                "sender": sender,
+                "subject": subject,
+                "snippet": full.get("snippet", ""),
+                "date_ms": int(full.get("internalDate", 0)),
+            })
+        return emails
+
+    try:
+        emails = await asyncio.get_event_loop().run_in_executor(None, _sync_fetch)
+        return {"emails": emails}
+    except Exception as e:
+        logger.error("Failed to fetch emails for alert endpoint: %s", e)
+        return {"emails": []}
+
+
+@app.get("/alerts/calendar", tags=["alerts"])
+async def get_alert_calendar() -> dict:
+    """
+    Internal endpoint for the bot's meeting reminder loop.
+    Returns today's upcoming events with start times — NO LLM involved.
+    """
+    import asyncio
+    from datetime import datetime, timezone, timedelta
+    from tools.google_auth import get_google_credentials
+    from googleapiclient.discovery import build
+
+    def _sync_fetch():
+        creds = get_google_credentials()
+        if not creds:
+            return []
+        service = build("calendar", "v3", credentials=creds)
+        now = datetime.now(timezone.utc)
+        end = now + timedelta(hours=2)
+        result = service.events().list(
+            calendarId="primary",
+            timeMin=now.isoformat(),
+            timeMax=end.isoformat(),
+            singleEvents=True,
+            orderBy="startTime",
+            maxResults=10,
+        ).execute()
+        events = []
+        for evt in result.get("items", []):
+            start = evt.get("start", {})
+            events.append({
+                "id": evt.get("id"),
+                "summary": evt.get("summary", "Untitled"),
+                "start": start.get("dateTime") or start.get("date"),
+                "location": evt.get("location", ""),
+            })
+        return events
+
+    try:
+        events = await asyncio.get_event_loop().run_in_executor(None, _sync_fetch)
+        return {"events": events}
+    except Exception as e:
+        logger.error("Failed to fetch calendar for alert endpoint: %s", e)
+        return {"events": []}
