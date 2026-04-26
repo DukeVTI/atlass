@@ -120,17 +120,36 @@ class CalendarCreateTool(Tool):
                 overlap_summaries = ", ".join(e.get('summary', 'Busy') for e in overlaps)
                 return f"SYSTEM GATE / CONFLICT: The user is already double booked during this time with: {overlap_summaries}. Alert the user."
 
+            import uuid
             # If no overlaps, create event
             event_body = {
                 "summary": summary,
                 "start": {"dateTime": start_time_iso},
                 "end": {"dateTime": end_time_iso},
+                "conferenceData": {
+                    "createRequest": {
+                        "requestId": uuid.uuid4().hex,
+                        "conferenceSolutionKey": {"type": "hangoutsMeet"}
+                    }
+                }
             }
             if attendees:
                 event_body["attendees"] = [{"email": email} for email in attendees]
 
-            event = service.events().insert(calendarId="primary", body=event_body).execute()
-            return f"Event created successfully: {event.get('htmlLink')}"
+            event = service.events().insert(
+                calendarId="primary", 
+                body=event_body,
+                conferenceDataVersion=1
+            ).execute()
+            
+            meet_link = ""
+            if event.get("conferenceData") and event["conferenceData"].get("entryPoints"):
+                for ep in event["conferenceData"]["entryPoints"]:
+                    if ep.get("entryPointType") == "video":
+                        meet_link = f" (Meet Link: {ep.get('uri')})"
+                        break
+
+            return f"Event created successfully: {event.get('htmlLink')}{meet_link}"
 
         try:
             return await asyncio.to_thread(_sync_create)
