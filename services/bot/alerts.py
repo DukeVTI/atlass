@@ -120,12 +120,35 @@ def _score_email(email_id: str, sender: str, subject: str, snippet: str, date_ms
     return max(0, min(score, 100))
 
 
-# ─── Alert 1: Paystack Payment ────────────────────────────────────────────────
-
-async def check_payment_alerts(context: ContextTypes.DEFAULT_TYPE) -> None:
+def _score_whatsapp(sender: str, message_text: str) -> int:
     """
-    Polls Redis for Paystack payment notifications pushed by the API webhook handler.
-    Fires immediately when a payment arrives (poll every 30s).
+    Algorithmic scorer for incoming WhatsApp messages.
+    Returns 0-100.
+    """
+    score = 0
+    sender_lower = sender.lower()
+    text_lower = message_text.lower()
+
+    # Sender Score
+    if any(vip in sender_lower for vip in _vip_emails):  # Re-use VIP lists or domains if they match contact names
+        score += 40
+
+    # Keyword Score
+    keyword_score = 0
+    for kw, pts in URGENT_KEYWORDS.items():
+        if kw in text_lower:
+            keyword_score += pts
+            
+    score += min(keyword_score, 40) if keyword_score > 0 else keyword_score
+    return max(0, min(score, 100))
+
+
+# ─── Alert 1: Redis Notifications (Paystack & WhatsApp) ─────────────────────────
+
+async def check_redis_notifications(context: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    Polls Redis for instant notifications (Paystack webhooks, WhatsApp incoming).
+    Fires immediately (poll every 30s).
     """
     try:
         import redis.asyncio as aioredis
@@ -136,6 +159,8 @@ async def check_payment_alerts(context: ContextTypes.DEFAULT_TYPE) -> None:
             if not item:
                 break
             payload = json.loads(item)
+            
+            # Paystack Alert
             if payload.get("type") == "paystack_payment":
                 text = payload.get("text", "💰 A payment just came in, sir.")
                 for user_id in ALLOWED_IDS:
@@ -145,10 +170,36 @@ async def check_payment_alerts(context: ContextTypes.DEFAULT_TYPE) -> None:
                         parse_mode=ParseMode.MARKDOWN,
                     )
                 logger.info("Payment alert sent: %s", payload.get("reference"))
+                
+            # WhatsApp Incoming Alert
+            elif payload.get("type") == "whatsapp_incoming":
+                sender_name = payload.get("sender_name", "Unknown")
+                message_text = payload.get("message_text", "")
+                
+                score = _score_whatsapp(sender_name, message_text)
+                
+                if score >= URGENT_EMAIL_THRESHOLD:
+                    flag = "🚨 Urgent WhatsApp" if score >= 80 else "💬 Important WhatsApp"
+                    safe_sender = _safe(sender_name)
+                    safe_msg = _safe(message_text[:200])
+                    
+                    text = (
+                        f"{flag} —\n"
+                        f"From: *{safe_sender}*\n"
+                        f"\"{safe_msg}\""
+                        + "\n\nWant me to draft a reply?"
+                    )
+                    for user_id in ALLOWED_IDS:
+                        await context.bot.send_message(
+                            chat_id=user_id,
+                            text=text,
+                            parse_mode=ParseMode.MARKDOWN,
+                        )
+                    logger.info(f"WhatsApp alert sent for {sender_name} (score={score})")
 
         await r.aclose()
     except Exception as e:
-        logger.error("Payment alert check failed: %s", e)
+        logger.error("Redis notification check failed: %s", e)
 
 
 # ─── Alert 2: Urgent Email ────────────────────────────────────────────────────

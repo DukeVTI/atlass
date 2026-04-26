@@ -30,6 +30,7 @@ from tools.calendar import CalendarReadTool, CalendarCreateTool
 from tools.gmail import GmailReadTool, GmailDraftTool, GmailSendTool
 from tools.paystack import PaystackBalanceTool, PaystackCustomerTool, PaystackTransactionsTool, PaystackTransferTool
 from tools.local_file import LocalFileTool
+from tools.whatsapp import WhatsAppReadTool, WhatsAppSendTool
 
 # Register all tools
 registry.register(WebSearchTool())
@@ -43,6 +44,8 @@ registry.register(PaystackCustomerTool())
 registry.register(PaystackTransactionsTool())
 registry.register(PaystackTransferTool())
 registry.register(LocalFileTool())
+registry.register(WhatsAppReadTool())
+registry.register(WhatsAppSendTool())
 
 load_dotenv()
 

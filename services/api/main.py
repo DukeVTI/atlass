@@ -56,8 +56,17 @@ async def lifespan(app: FastAPI):
                 result TEXT
             );
         """)
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS whatsapp_messages (
+                id SERIAL PRIMARY KEY,
+                remote_jid TEXT,
+                sender_name TEXT,
+                message_text TEXT,
+                timestamp TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+            );
+        """)
         await conn.close()
-        logger.info("Audit Log table initialized.")
+        logger.info("Database tables initialized (audit_logs, whatsapp_messages).")
     except Exception as e:
         logger.error(f"Failed to initialize Audit Log table: {e}")
         
@@ -186,6 +195,48 @@ async def paystack_webhook(request: Request, x_paystack_signature: str = Header(
         except Exception as e:
             logger.error(f"Failed to enqueue webhook notification to Redis: {e}")
             
+    return {"status": "success"}
+
+
+@app.post("/webhooks/whatsapp", tags=["webhooks"])
+async def whatsapp_webhook(request: Request):
+    """
+    Ingests incoming WhatsApp messages from the Baileys Node.js sidecar.
+    Stores them silently in the database, and pushes them to Redis for the bot to score and optionally alert.
+    """
+    payload = await request.json()
+    remote_jid = payload.get("remote_jid")
+    sender_name = payload.get("sender_name", "Unknown")
+    message_text = payload.get("message_text", "")
+    
+    if not remote_jid or not message_text:
+        return {"status": "ignored"}
+        
+    try:
+        dsn = os.environ["POSTGRES_DSN"].replace("+asyncpg", "")
+        conn = await asyncpg.connect(dsn)
+        await conn.execute("""
+            INSERT INTO whatsapp_messages (remote_jid, sender_name, message_text)
+            VALUES ($1, $2, $3)
+        """, remote_jid, sender_name, message_text)
+        await conn.close()
+        logger.info(f"Stored WhatsApp message from {sender_name} ({remote_jid})")
+        
+        import json
+        r = aioredis.from_url(os.environ["REDIS_URL"])
+        message_payload = {
+            "type": "whatsapp_incoming",
+            "remote_jid": remote_jid,
+            "sender_name": sender_name,
+            "message_text": message_text
+        }
+        await r.rpush("atlas:notifications:telegram", json.dumps(message_payload))
+        await r.aclose()
+        
+    except Exception as e:
+        logger.error(f"Failed to process WhatsApp webhook: {e}")
+        raise HTTPException(status_code=500, detail="Internal processing error")
+        
     return {"status": "success"}
 
 # ─── Audit Logging ────────────────────────────────────────────────────────────
