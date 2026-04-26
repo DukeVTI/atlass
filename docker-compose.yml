@@ -76,6 +76,7 @@ services:
       CLAUDE_MAX_TOKENS: ${CLAUDE_MAX_TOKENS:-700}
       CLAUDE_TEMPERATURE: ${CLAUDE_TEMPERATURE:-0.6}
       REDIS_URL: redis://redis:6379/0
+      POSTGRES_DSN: postgresql+asyncpg://atlas:${POSTGRES_PASSWORD}@postgres/atlas
       API_BASE_URL: http://api:8000
       SERPAPI_KEY: ${SERPAPI_KEY}
       PAYSTACK_SECRET_KEY: ${PAYSTACK_SECRET_KEY}
