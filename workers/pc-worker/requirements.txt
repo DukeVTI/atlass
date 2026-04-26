@@ -2,4 +2,4 @@ websockets
 python-dotenv
 psutil
 
-mss
+Pillow

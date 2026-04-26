@@ -97,18 +97,23 @@ def delete_file(filepath: str) -> str:
 def take_screenshot() -> list:
     """Captures the primary monitor and returns Anthropic image block list."""
     try:
-        import mss
-        import mss.tools
-        with mss.mss() as sct:
-            monitor = sct.monitors[1]
-            sct_img = sct.grab(monitor)
-            png_bytes = mss.tools.to_png(sct_img.rgb, sct_img.size)
-            b64_data = base64.b64encode(png_bytes).decode("utf-8")
-            
-            return [
-                {"type": "text", "text": "Screenshot captured successfully."},
-                {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": b64_data}}
-            ]
+        from PIL import ImageGrab
+        import io
+        
+        # Grab all screens (handles hardware accelerated windows natively on Windows)
+        img = ImageGrab.grab(all_screens=True)
+        
+        # Convert to PNG bytes in memory
+        buffer = io.BytesIO()
+        img.save(buffer, format="PNG")
+        png_bytes = buffer.getvalue()
+        
+        b64_data = base64.b64encode(png_bytes).decode("utf-8")
+        
+        return [
+            {"type": "text", "text": "Screenshot captured successfully."},
+            {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": b64_data}}
+        ]
     except Exception as e:
         return f"Error taking screenshot: {str(e)}"
 
