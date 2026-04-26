@@ -130,7 +130,7 @@ async def check_payment_alerts(context: ContextTypes.DEFAULT_TYPE) -> None:
                 break
             payload = json.loads(item)
             if payload.get("type") == "paystack_payment":
-                text = payload.get("text", "💳 Payment received!")
+                text = payload.get("text", "💰 A payment just came in, sir.")
                 for user_id in ALLOWED_IDS:
                     await context.bot.send_message(
                         chat_id=user_id,
@@ -176,12 +176,14 @@ async def check_email_alerts(context: ContextTypes.DEFAULT_TYPE) -> None:
             logger.debug("Email %s scored %d (threshold %d)", email_id[:8], score, URGENT_EMAIL_THRESHOLD)
 
             if score >= URGENT_EMAIL_THRESHOLD:
-                priority = "🚨 *URGENT*" if score >= 80 else "📧 *Important Email*"
+                flag = "🚨 Heads up, looks urgent" if score >= 80 else "📧 Something worth your attention"
                 text = (
-                    f"{priority}\n\n"
-                    f"*From:* {email.get('sender', 'Unknown')}\n"
-                    f"*Subject:* {email.get('subject', 'No Subject')}\n"
-                    f"*Preview:* {email.get('snippet', '')[:200]}"
+                    f"{flag} —
+"
+                    f"From {email.get('sender', 'Unknown')}\n"
+                    f"\"{email.get('subject', 'No Subject')}\""
+                    + (f"\n\n{email.get('snippet', '')[:200]}" if email.get('snippet') else "")
+                    + "\n\nWant me to pull it up?"
                 )
                 for user_id in ALLOWED_IDS:
                     await context.bot.send_message(
@@ -234,12 +236,16 @@ async def check_meeting_reminders(context: ContextTypes.DEFAULT_TYPE) -> None:
                 if key in _alerted_meeting_ids:
                     continue
                 if abs(minutes_until - window) <= 0.6:  # within 36 seconds of the window
-                    text = (
-                        f"📅 *Meeting in {label}*\n\n"
-                        f"*{summary}*"
-                        + (f"\n📍 {location}" if location else "")
-                        + f"\n⏰ Starts at {start_dt.strftime('%I:%M %p')}"
-                    )
+                    if window == 15:
+                        text = (
+                            f"⏰ Just a heads up — *{summary}* is in 15 minutes."
+                            + (f" ({location})" if location else "")
+                        )
+                    else:
+                        text = (
+                            f"🔔 Last call — *{summary}* starts in 5 minutes!"
+                            + (f" ({location})" if location else "")
+                        )
                     for user_id in ALLOWED_IDS:
                         await context.bot.send_message(
                             chat_id=user_id,
@@ -274,9 +280,8 @@ async def check_worker_health(context: ContextTypes.DEFAULT_TYPE) -> None:
                 await context.bot.send_message(
                     chat_id=user_id,
                     text=(
-                        f"🔌 *PC Worker Offline*\n\n"
-                        f"Your laptop worker has been disconnected for {offline_minutes:.0f} minutes.\n"
-                        "Local tools (file access, shell, screenshots) are unavailable until it reconnects."
+                        f"🔌 Hey, your laptop has been offline for about {offline_minutes:.0f} minutes. "
+                        "I can't reach local tools until it's back."
                     ),
                     parse_mode=ParseMode.MARKDOWN,
                 )
@@ -289,7 +294,7 @@ async def check_worker_health(context: ContextTypes.DEFAULT_TYPE) -> None:
             for user_id in ALLOWED_IDS:
                 await context.bot.send_message(
                     chat_id=user_id,
-                    text="✅ *PC Worker Reconnected*\nYour laptop is back online. Local tools are available again.",
+                    text="✅ Your laptop just came back online. I've got full access again.",
                     parse_mode=ParseMode.MARKDOWN,
                 )
             logger.info("PC worker reconnected — alert reset.")

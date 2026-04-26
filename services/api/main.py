@@ -179,7 +179,7 @@ async def paystack_webhook(request: Request, x_paystack_signature: str = Header(
                 "amount": amount,
                 "currency": currency,
                 "reference": ref,
-                "text": f"💳 *Payment Received!*\nYou have received {currency} {amount:,.2f} via Paystack.\nRef: `{ref}`"
+                "text": f"💰 Money just landed, sir — {currency} {amount:,.2f} via Paystack. Ref: `{ref}`"
             }
             await r.rpush("atlas:notifications:telegram", json.dumps(message_payload))
             await r.aclose()
