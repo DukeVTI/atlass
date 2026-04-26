@@ -243,11 +243,13 @@ class ButlerLoop:
                     result_str
                 )
                 
+                final_content = result if isinstance(result, list) else result_str
+                
                 tool_results.append(
                     {
                         "type": "tool_result",
                         "tool_use_id": tool_call.id,
-                        "content": result_str,
+                        "content": final_content,
                     }
                 )
 

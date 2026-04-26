@@ -1,3 +1,5 @@
 websockets
 python-dotenv
 psutil
+
+mss
