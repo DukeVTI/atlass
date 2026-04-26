@@ -37,16 +37,21 @@ class WebSearchTool(Tool):
 
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
-                response = await client.get(
-                    "https://serpapi.com/search",
-                    params={
-                        "q": query,
-                        "engine": "google"
-                    },
-                    headers={
-                        "X-API-KEY": SERPAPI_KEY
-                    }
-                )
+                # Temporarily suppress httpx logging to prevent API key leak in the console
+                httpx_logger = logging.getLogger("httpx")
+                original_level = httpx_logger.level
+                httpx_logger.setLevel(logging.WARNING)
+                try:
+                    response = await client.get(
+                        "https://serpapi.com/search",
+                        params={
+                            "q": query,
+                            "engine": "google",
+                            "api_key": SERPAPI_KEY
+                        }
+                    )
+                finally:
+                    httpx_logger.setLevel(original_level)
                 response.raise_for_status()
                 data = response.json()
         except Exception as exc:
