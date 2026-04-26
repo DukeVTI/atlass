@@ -109,7 +109,14 @@ class ClaudeClient:
         # Lagos (WAT) is strictly UTC+1 all year round.
         wat_tz = timezone(timedelta(hours=1), name="WAT")
         now = datetime.fromtimestamp(true_utc_timestamp, tz=timezone.utc).astimezone(wat_tz)
-        time_context = f"\n\nCURRENT SYSTEM TIME: {now.strftime('%A, %B %d, %Y - %I:%M %p (WAT)')}"
+        
+        # Forceful time injection so Claude doesn't hallucinate its cutoff date
+        time_context = (
+            f"\n\n[CRITICAL SYSTEM INSTRUCTION]\n"
+            f"The current real-world time is EXACTLY: {now.strftime('%A, %B %d, %Y - %I:%M %p (WAT)')}\n"
+            f"You MUST use this exact time and date whenever the user asks about the current time or date. "
+            f"Do not use your training cutoff date."
+        )
         
         dynamic_system_prompt = SYSTEM_PROMPT + time_context
 
