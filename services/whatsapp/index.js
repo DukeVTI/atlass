@@ -14,6 +14,7 @@ const {
   default: makeWASocket,
   useMultiFileAuthState,
   DisconnectReason,
+  fetchLatestBaileysVersion,
 } = require("@whiskeysockets/baileys");
 const qrcode = require("qrcode-terminal");
 
@@ -30,8 +31,11 @@ let sock = null;
 
 async function connectToWhatsApp() {
   const { state, saveCreds } = await useMultiFileAuthState("baileys_auth_info");
+  const { version, isLatest } = await fetchLatestBaileysVersion();
+  console.log(`[atlas.whatsapp] Using WA v${version.join(".")}, isLatest: ${isLatest}`);
 
   sock = makeWASocket({
+    version,
     auth: state,
     printQRInTerminal: false,
     logger: pino({ level: "silent" }),
