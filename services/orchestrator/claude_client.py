@@ -51,7 +51,30 @@ class ClaudeClient:
         self.max_tokens = int(os.environ.get("CLAUDE_MAX_TOKENS", "700"))
         self.temperature = float(os.environ.get("CLAUDE_TEMPERATURE", "0.6"))
 
+        # Calculate time offset from worldtimeapi to bypass broken VPS clocks
+        self.time_offset_seconds = 0
+        self._sync_time_offset()
+
         logger.info("ClaudeClient initialized. Model: %s", self.model)
+
+    def _sync_time_offset(self):
+        """Fetches true UTC time to calculate offset and bypass drifting VPS clocks."""
+        import urllib.request
+        import json
+        import time
+        try:
+            req = urllib.request.Request(
+                "http://worldtimeapi.org/api/timezone/Africa/Lagos", 
+                headers={'User-Agent': 'Atlas-Butler-AI'}
+            )
+            with urllib.request.urlopen(req, timeout=5) as response:
+                data = json.loads(response.read().decode('utf-8'))
+                true_unixtime = data.get("unixtime")
+                if true_unixtime:
+                    self.time_offset_seconds = true_unixtime - time.time()
+                    logger.info("Time offset synced from WorldTimeAPI: %s seconds", self.time_offset_seconds)
+        except Exception as e:
+            logger.warning("Failed to sync true time. Falling back to system clock: %s", e)
 
     async def chat(
         self,
@@ -77,12 +100,15 @@ class ClaudeClient:
         Raises:
             ClaudeError on unrecoverable API failures.
         """
+        import time
         from datetime import datetime, timezone, timedelta
 
-        # Lagos (WAT) is strictly UTC+1 all year round (no Daylight Saving Time).
-        # We use a fixed timedelta instead of zoneinfo to avoid missing 'tzdata' issues in slim Docker images.
+        # Get true UTC timestamp by applying the offset
+        true_utc_timestamp = time.time() + self.time_offset_seconds
+        
+        # Lagos (WAT) is strictly UTC+1 all year round.
         wat_tz = timezone(timedelta(hours=1), name="WAT")
-        now = datetime.now(wat_tz)
+        now = datetime.fromtimestamp(true_utc_timestamp, tz=timezone.utc).astimezone(wat_tz)
         time_context = f"\n\nCURRENT SYSTEM TIME: {now.strftime('%A, %B %d, %Y - %I:%M %p (WAT)')}"
         
         dynamic_system_prompt = SYSTEM_PROMPT + time_context
