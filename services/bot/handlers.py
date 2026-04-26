@@ -16,6 +16,8 @@ Edge cases handled:
 
 import logging
 import os
+import random
+from datetime import datetime, timezone, timedelta
 
 import httpx
 import re
@@ -24,7 +26,7 @@ from telegram.constants import ChatAction, ParseMode
 from telegram.error import Forbidden, RetryAfter, TimedOut
 from telegram.ext import ContextTypes
 
-from auth import require_auth
+from auth import require_auth, ALLOWED_IDS
 from transcribe import transcribe_audio
 
 logger = logging.getLogger("atlas.bot.handlers")
@@ -414,3 +416,64 @@ async def error_handler(
             )
         except Exception:
             pass
+
+
+# ─── Morning Briefing Scheduler ───────────────────────────────────────────────
+
+BRIEFING_PROMPT = (
+    "[SYSTEM: MORNING BRIEFING MODE]\n"
+    "Good morning. Please deliver the morning briefing. "
+    "Use your tools to: "
+    "(1) fetch today's Google Calendar agenda, "
+    "(2) check the Gmail inbox for important unread emails, "
+    "(3) fetch the Paystack balance and any overnight transactions. "
+    "Synthesise everything into a clean, structured morning briefing for Duke. "
+    "Be concise, professional, and butler-like. Lead with the most urgent items."
+)
+
+
+async def _send_briefing_now(context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Actually sends the morning briefing to all authorised users."""
+    logger.info("Morning briefing firing now.")
+    
+    for user_id in ALLOWED_IDS:
+        try:
+            bot_msg = await context.bot.send_message(
+                chat_id=user_id,
+                text="🌅 _Preparing your morning briefing..._",
+                parse_mode=ParseMode.MARKDOWN,
+            )
+
+            final_text = "Morning briefing unavailable — please try again shortly."
+            async for event in _call_orchestrator(
+                user_id=user_id,
+                username="Duke",
+                message=BRIEFING_PROMPT,
+            ):
+                if event.get("type") == "message":
+                    final_text = event["content"]
+
+            await bot_msg.edit_text(_truncate(final_text))
+            logger.info("Morning briefing delivered to user %d.", user_id)
+        except Exception as e:
+            logger.error("Failed to deliver morning briefing to user %d: %s", user_id, e)
+
+
+async def schedule_random_briefing(context: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    Daily trigger job that fires at 6:30am WAT.
+    Picks a random offset (0–60 min) and schedules the actual briefing
+    as a one-shot job within the 6:30–7:30am window.
+    """
+    offset_minutes = random.randint(0, 60)
+    logger.info(
+        "Briefing scheduler triggered. Actual delivery in %d min (%.f:%02.f WAT).",
+        offset_minutes,
+        6 + (30 + offset_minutes) // 60,
+        (30 + offset_minutes) % 60,
+    )
+    context.job_queue.run_once(
+        _send_briefing_now,
+        when=timedelta(minutes=offset_minutes),
+        name="morning_briefing_delivery",
+    )

@@ -8,6 +8,7 @@ Now wired to the orchestrator service for real AI responses.
 import logging
 import os
 import sys
+from datetime import time as dt_time, timezone, timedelta
 
 from dotenv import load_dotenv
 from telegram import BotCommand
@@ -32,6 +33,7 @@ from handlers import (
     help_command,
     start_command,
     status_command,
+    schedule_random_briefing,
 )
 
 load_dotenv()
@@ -104,6 +106,16 @@ def main() -> None:
     )
 
     app.add_error_handler(error_handler)
+
+    # ─── Morning Briefing ─ daily trigger at 6:30am WAT (UTC+1 = 05:30 UTC) ────────
+    WAT = timezone(timedelta(hours=1))
+    briefing_trigger_time = dt_time(hour=6, minute=30, tzinfo=WAT)
+    app.job_queue.run_daily(
+        schedule_random_briefing,
+        time=briefing_trigger_time,
+        name="morning_briefing_scheduler",
+    )
+    logger.info("Morning briefing scheduler registered — trigger at 06:30 WAT daily.")
 
     logger.info("All handlers registered. Starting long-poll loop.")
 
