@@ -40,6 +40,13 @@ REDIS_URL = os.environ.get("REDIS_URL", "redis://redis:6379/0")
 
 URGENT_EMAIL_THRESHOLD = int(os.environ.get("URGENT_EMAIL_SCORE_THRESHOLD", "60"))
 
+
+def _safe(text: str) -> str:
+    """Escape characters that break Telegram MarkdownV1 parsing."""
+    for ch in ("*", "_", "`", "["):
+        text = text.replace(ch, f"\\{ch}")
+    return text
+
 # VIP contacts — comma-separated full emails or domains in .env
 _vip_emails = set(e.strip().lower() for e in os.environ.get("ALERT_VIP_EMAILS", "").split(",") if e.strip())
 _vip_domains = set(d.strip().lower() for d in os.environ.get("ALERT_VIP_DOMAINS", "paystack.com").split(",") if d.strip())
@@ -178,11 +185,10 @@ async def check_email_alerts(context: ContextTypes.DEFAULT_TYPE) -> None:
             if score >= URGENT_EMAIL_THRESHOLD:
                 flag = "🚨 Heads up, looks urgent" if score >= 80 else "📧 Something worth your attention"
                 text = (
-                    f"{flag} —
-"
-                    f"From {email.get('sender', 'Unknown')}\n"
-                    f"\"{email.get('subject', 'No Subject')}\""
-                    + (f"\n\n{email.get('snippet', '')[:200]}" if email.get('snippet') else "")
+                    f"{flag} —\n"
+                    f"From {_safe(email.get('sender', 'Unknown'))}\n"
+                    f"\"{_safe(email.get('subject', 'No Subject'))}\""
+                    + (f"\n\n{_safe(email.get('snippet', '')[:200])}" if email.get('snippet') else "")
                     + "\n\nWant me to pull it up?"
                 )
                 for user_id in ALLOWED_IDS:
@@ -236,15 +242,17 @@ async def check_meeting_reminders(context: ContextTypes.DEFAULT_TYPE) -> None:
                 if key in _alerted_meeting_ids:
                     continue
                 if abs(minutes_until - window) <= 0.6:  # within 36 seconds of the window
+                    safe_summary = _safe(summary)
+                    safe_location = _safe(location) if location else ""
                     if window == 15:
                         text = (
-                            f"⏰ Just a heads up — *{summary}* is in 15 minutes."
-                            + (f" ({location})" if location else "")
+                            f"⏰ Just a heads up — *{safe_summary}* is in 15 minutes."
+                            + (f" ({safe_location})" if safe_location else "")
                         )
                     else:
                         text = (
-                            f"🔔 Last call — *{summary}* starts in 5 minutes!"
-                            + (f" ({location})" if location else "")
+                            f"🔔 Last call — *{safe_summary}* starts in 5 minutes!"
+                            + (f" ({safe_location})" if safe_location else "")
                         )
                     for user_id in ALLOWED_IDS:
                         await context.bot.send_message(
