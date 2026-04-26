@@ -50,7 +50,7 @@ services:
       - "8000:8000"
     environment:
       POSTGRES_DSN: postgresql+asyncpg://atlas:${POSTGRES_PASSWORD}@postgres/atlas
-      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+      REDIS_URL: redis://redis:6379/0
       WORKER_TOKEN: ${WORKER_TOKEN}
       PAYSTACK_SECRET_KEY: ${PAYSTACK_SECRET_KEY}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
@@ -75,7 +75,7 @@ services:
       ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-3-5-haiku-20241022}
       CLAUDE_MAX_TOKENS: ${CLAUDE_MAX_TOKENS:-700}
       CLAUDE_TEMPERATURE: ${CLAUDE_TEMPERATURE:-0.6}
-      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+      REDIS_URL: redis://redis:6379/0
       API_BASE_URL: http://api:8000
       SERPAPI_KEY: ${SERPAPI_KEY}
       PAYSTACK_SECRET_KEY: ${PAYSTACK_SECRET_KEY}
