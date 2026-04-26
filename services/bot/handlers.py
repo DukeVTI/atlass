@@ -216,7 +216,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             message=message,
         ):
             if event.get("type") == "status":
-                await bot_msg.edit_text(f"⏳ _{event['content']}_", parse_mode=ParseMode.MARKDOWN)
+                await bot_msg.edit_text(f"⏳ {event['content']}")
                 await update.message.chat.send_action(ChatAction.TYPING)
             else:
                 await bot_msg.edit_text(_truncate(event["content"]))
