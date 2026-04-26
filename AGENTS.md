@@ -32,7 +32,7 @@ Layer 1 — Infrastructure
 - PostgreSQL + Redis + ChromaDB containers up and healthy
 - FastAPI API service with health checks and audit logging
 - Telegram bot gateway with command handlers
-- Claude Haiku 4.5 LLM integration (single provider, no fallbacks)
+- Claude 3.5 Sonnet LLM integration (single provider, no fallbacks)
 - Core tool system (web search, Gmail, Calendar, Paystack)
 - Confirmation gates for destructive actions
 
@@ -58,7 +58,7 @@ atlas/
 └── docs/                     # PRD + architecture notes
 
 ## LLM Routing Logic
-All tasks → Anthropic Claude Haiku 4.5 (`claude-haiku-4-5-20251001`) — single provider, all cases.
+All tasks → Anthropic Claude 3.5 Sonnet (`claude-3-5-sonnet-20241022`) — single provider, all cases.
 No routing logic. No fallbacks. No secondary providers.
 Note: Groq integration and cost-based LLM routing are post-v1.0 optimizations.
 
@@ -68,7 +68,7 @@ Note: Groq integration and cost-based LLM routing are post-v1.0 optimizations.
 - Redis for caching and task queue (Celery configured in future layer)
 - PostgreSQL + SQLAlchemy (async) for structured data
 - ChromaDB for vector memory
-- Anthropic Claude Haiku 4.5 (`claude-haiku-4-5-20251001`) — sole LLM for all tasks
+- Anthropic Claude 3.5 Sonnet (`claude-3-5-sonnet-20241022`) — sole LLM for all tasks
 - python-telegram-bot v20 (async) for Telegram
 - Baileys (Node.js) for WhatsApp — runs as a sidecar, called via HTTP
 - Docker + Docker Compose for all services
