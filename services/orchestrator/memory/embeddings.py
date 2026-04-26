@@ -252,12 +252,7 @@ class VectorMemoryStore:
                 id,
                 summary,
                 embedding,
-                (1.0 - (
-                    (SELECT SUM(a * b) FROM jsonb_each_text(:embedding) e, jsonb_each_text(embedding) v WHERE e.key = v.key)
-                    / 
-                    (SQRT(SELECT SUM(POWER(CAST(v AS FLOAT8), 2)) FROM jsonb_each_text(:embedding) e(v))) *
-                    (SQRT(SELECT SUM(POWER(CAST(v AS FLOAT8), 2)) FROM jsonb_each_text(embedding) e(v)))
-                )) AS relevance
+                (1.0 - (CAST(embedding AS text)::vector <=> CAST(:embedding AS text)::vector)) AS relevance
             FROM episodic_memory
             WHERE user_id = :user_id AND embedding IS NOT NULL
             ORDER BY relevance DESC

@@ -339,9 +339,9 @@ class ButlerLoop:
                 json={
                     "user_id": user_id,
                     "event_type": "tool_execution",
-                    "tool_name": tool_name,
-                    "inputs": inputs,
-                    "output": output,
+                    "summary": f"Executed tool: {tool_name}",
+                    "full_context": f"Input: {inputs}\n\nOutput: {output}",
+                    "source": "tool_call",
                 },
                 timeout=5.0,
             )
@@ -369,8 +369,8 @@ class ButlerLoop:
                     "session_id": session_id,
                     "turn_number": turn_number,
                     "user_message": user_message,
-                    "assistant_message": assistant_message,
-                    "tools_used": tools_used,
+                    "assistant_response": assistant_message,
+                    "tool_calls": tools_used,
                 },
                 timeout=5.0,
             )
