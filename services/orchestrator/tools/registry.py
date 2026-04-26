@@ -159,3 +159,9 @@ class RejectActionTool(Tool):
         return f"Successfully canceled the pending action '{target_tool_name}'."
 
 registry.register(RejectActionTool())
+
+# ─── Register PC Worker Tools ───
+from .pc_worker import PCRunShellTool, PCReadFileTool, PCSystemStatusTool
+registry.register(PCRunShellTool())
+registry.register(PCReadFileTool())
+registry.register(PCSystemStatusTool())

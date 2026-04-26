@@ -273,12 +273,13 @@ async def websocket_endpoint(websocket: WebSocket, authorization: str = Header(N
                 response = await websocket.receive_json()
                 logger.info(f"Response from {worker_id}: {response.get('status')}")
                 
-                # In Layer 2, we just log responses. 
-                # Layer 3/4 would route these back to the orchestrator via Redis or Callback.
-                # For now, we'll push to Redis for visibility.
+                # Push response to a task-specific Redis list so the Orchestrator can BLPOP it
                 try:
+                    task_id = response.get("task_id", "unknown")
                     r = aioredis.from_url(os.environ["REDIS_URL"])
-                    await r.rpush(f"atlas:responses:{worker_id}", json.dumps(response))
+                    # Expire the list after 60 seconds just to keep Redis clean
+                    await r.lpush(f"atlas:task_result:{task_id}", json.dumps(response))
+                    await r.expire(f"atlas:task_result:{task_id}", 60)
                     await r.aclose()
                 except Exception as e:
                     logger.error(f"Failed to push worker response to Redis: {e}")

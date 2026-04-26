@@ -129,6 +129,9 @@ Document generation	Create PDF, DOCX, or Markdown from structured content	Report
 Clipboard access	Read or write clipboard content	pyperclip
 File watcher	Monitor directories for new/changed files; push events to VPS	watchdog
 VPN / network status	Report current network and VPN connection state	psutil + subprocess
+Browser Automation	Headless/headed browsing of authenticated sites	Playwright / Selenium
+Local Dev & DB Access	Query local DBs, read Git repos, execute local test suites	psycopg2 / gitpython / subprocess
+Hardware & IoT Control	Access local webcams, microphones, or network devices	OpenCV / pyaudio / requests
 
 WORKER OFFLINE BEHAVIOUR
 When the PC worker is offline (laptop closed, powered off, or worker process stopped), the VPS brain handles this gracefully. It queues any PC-bound tasks, reports their pending status to the user in Telegram, and executes them automatically when the worker reconnects. The user is notified of reconnection and queued task completion.
