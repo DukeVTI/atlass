@@ -70,58 +70,50 @@ def _classify_media(message) -> str:  # type: ignore[no-untyped-def]
     return "message"
 
 
-async def _call_orchestrator(user_id: int, username: str, message: str) -> str:
-    """
-    POST the message to the orchestrator and return Atlas's text response.
+import json
 
-    Handles all network-level failures and returns a butler-style error
-    message so the caller never needs to deal with HTTP exceptions.
+async def _call_orchestrator(user_id: int, username: str, message: str):
+    """
+    POST the message to the orchestrator and yield SSE events.
+    Yields dicts with 'type' (status|message|error) and 'content'.
     """
     try:
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            resp = await client.post(
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            async with client.stream(
+                "POST",
                 f"{ORCHESTRATOR_URL}/chat",
                 json={
                     "message": message,
                     "user_id": user_id,
                     "username": username,
                 },
-            )
-            resp.raise_for_status()
-            return resp.json()["response"]
+            ) as response:
+                response.raise_for_status()
+                async for line in response.aiter_lines():
+                    if line.startswith("data: "):
+                        try:
+                            yield json.loads(line[6:].strip())
+                        except json.JSONDecodeError:
+                            pass
 
     except httpx.TimeoutException:
         logger.warning("Orchestrator timed out for user %d.", user_id)
-        return (
-            "My apologies, sir — I took too long to gather my thoughts. "
-            "Please try again."
-        )
+        yield {
+            "type": "error",
+            "content": "My apologies, sir — I took too long to gather my thoughts. Please try again."
+        }
     except httpx.HTTPStatusError as exc:
-        logger.error(
-            "Orchestrator returned HTTP %d for user %d: %s",
-            exc.response.status_code,
-            user_id,
-            exc.response.text[:200],
-        )
-        return (
-            "I encountered an internal error while processing that, sir. "
-            "It has been logged. Please try again."
-        )
-    except httpx.ConnectError:
-        logger.error("Cannot reach orchestrator at %s.", ORCHESTRATOR_URL)
-        return (
-            "I appear to be disconnected from my own mind at the moment, sir. "
-            "The orchestrator service is unreachable. "
-            "Please alert the infrastructure team."
-        )
+        logger.error("Orchestrator HTTP error: %s", exc)
+        yield {
+            "type": "error",
+            "content": "I encountered an internal error while processing that, sir."
+        }
     except Exception as exc:
-        logger.error(
-            "Unexpected error calling orchestrator for user %d: %s", user_id, exc
-        )
-        return (
-            "Something unexpected happened, sir. "
-            "The error has been logged. Please try again shortly."
-        )
+        logger.error("Unexpected error for user %d: %s", user_id, exc)
+        yield {
+            "type": "error",
+            "content": "Something unexpected happened, sir. Please try again shortly."
+        }
 
 
 # ─── Command Handlers ─────────────────────────────────────────────────────────
@@ -215,14 +207,22 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
     # Show typing indicator immediately
     await update.message.chat.send_action(ChatAction.TYPING)
+    bot_msg = await update.message.reply_text("⏳ _Thinking..._", parse_mode=ParseMode.MARKDOWN)
 
-    response = await _call_orchestrator(
-        user_id=user.id,
-        username=user.username or user.first_name,
-        message=message,
-    )
-
-    await update.message.reply_text(_truncate(response))
+    try:
+        async for event in _call_orchestrator(
+            user_id=user.id,
+            username=user.username or user.first_name,
+            message=message,
+        ):
+            if event.get("type") == "status":
+                await bot_msg.edit_text(f"⏳ _{event['content']}_", parse_mode=ParseMode.MARKDOWN)
+                await update.message.chat.send_action(ChatAction.TYPING)
+            else:
+                await bot_msg.edit_text(_truncate(event["content"]))
+    except Exception as e:
+        logger.error("Failed to process stream: %s", e)
+        await bot_msg.edit_text("Something unexpected happened, sir. Please try again.")
 
 
 @require_auth

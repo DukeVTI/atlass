@@ -66,12 +66,12 @@ class ButlerLoop:
     def set_schemas(self, schemas: list[dict]):
         self.tool_schemas = schemas
 
-    async def run(
+    async def run_stream(
         self,
         messages: list[dict],
         user_id: int,
         session_id: str | None = None,
-    ) -> str:
+    ):
         """
         Execute the full butler loop for one user message.
 
@@ -151,7 +151,8 @@ class ButlerLoop:
                     tools_used_in_turn
                 )
                 
-                return response["content"]
+                yield f"data: {json.dumps({'type': 'message', 'content': response['content']})}\n\n"
+                return
 
             # ΓöÇΓöÇ Case 2: Claude wants to call tools ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
             tool_calls = response["tool_calls"]
@@ -190,7 +191,8 @@ class ButlerLoop:
                     tools_used_in_turn
                 )
                 
-                return circuit_response
+                yield f"data: {json.dumps({'type': 'message', 'content': circuit_response})}\n\n"
+                return
 
             logger.info(
                 "Claude requested tools: %s (iteration %d)", tool_signature, iteration
@@ -204,6 +206,7 @@ class ButlerLoop:
             # Execute each requested tool and collect results
             tool_results = []
             for tool_call in tool_calls:
+                yield f"data: {json.dumps({'type': 'status', 'content': f'Executing tool: {tool_call.name}...'})}\n\n"
                 result = await self._execute_tool(tool_call, user_id=str(user_id))
                 tools_used_in_turn.append(tool_call.name)
                 
@@ -268,12 +271,11 @@ class ButlerLoop:
                 tools_used_in_turn
             )
             
-            return final_response
+            yield f"data: {json.dumps({'type': 'message', 'content': final_response})}\n\n"
         except ClaudeError:
             error_response = (
                 "I've exhausted my tool call allowance without completing your request, sir. "
-                "The task may be more complex than I can handle in one pass. "
-                "Please break it into smaller steps."
+                "Anthropic's API may be having difficulty understanding the context. Please rephrase."
             )
             
             # Store error turn in memory
@@ -286,7 +288,8 @@ class ButlerLoop:
                 tools_used_in_turn
             )
             
-            return error_response
+            yield f"data: {json.dumps({'type': 'message', 'content': error_response})}\n\n"
+            return
 
     async def _execute_tool(self, tool_call: Any, user_id: str = "duke") -> Any:
         """

@@ -135,13 +135,13 @@ async def health() -> dict:
     }
 
 
-@app.post("/chat", response_model=ChatResponse, tags=["chat"])
-async def chat(request: ChatRequest) -> ChatResponse:
+@app.post("/chat", tags=["chat"])
+async def chat(request: ChatRequest):
     """
-    Process a message from the Telegram bot and return Atlas's response.
+    Process a message from the Telegram bot and stream Atlas's response.
 
     Maintains per-user conversation history for contextual replies.
-    Runs the full butler loop: LLM → tool (if needed) → LLM → response.
+    Streams SSE events: status updates and the final message.
     """
     if not butler or not claude_client:
         raise HTTPException(status_code=503, detail="Orchestrator not ready.")
@@ -167,40 +167,38 @@ async def chat(request: ChatRequest) -> ChatResponse:
         _history[user_id] = history[-MAX_HISTORY:]
         history = _history[user_id]
 
-    try:
-        response_text = await butler.run(
-            messages=history,
-            user_id=user_id,
-            session_id=f"user_{user_id}"  # Use user_id as session identifier
-        )
-    except ClaudeError as exc:
-        # User-friendly Claude error — ClaudeError already has a butler-style message
-        logger.error("ClaudeError for user %d: %s", user_id, exc)
-        history.pop()  # Don't store the failed exchange
-        return ChatResponse(response=str(exc))
-    except Exception as exc:
-        logger.error(
-            "Unexpected error in butler loop for user %d: %s",
-            user_id,
-            exc,
-            exc_info=True,
-        )
-        history.pop()  # Don't store the failed exchange
-        raise HTTPException(
-            status_code=500,
-            detail="An internal error occurred in the orchestrator.",
-        )
+    async def event_generator():
+        try:
+            async for event_chunk in butler.run_stream(
+                messages=history,
+                user_id=user_id,
+                session_id=f"user_{user_id}"
+            ):
+                yield event_chunk
+                
+                # Intercept the final message to store it in history
+                if event_chunk.startswith("data: "):
+                    event_str = event_chunk[6:].strip()
+                    import json
+                    try:
+                        event = json.loads(event_str)
+                        if event.get("type") == "message":
+                            history.append({"role": "assistant", "content": event["content"]})
+                            logger.info(
+                                "Response for user %d: %r",
+                                user_id,
+                                event["content"][:120] + ("…" if len(event["content"]) > 120 else ""),
+                            )
+                    except json.JSONDecodeError:
+                        pass
+        except Exception as exc:
+            logger.error("Unexpected error in butler loop: %s", exc, exc_info=True)
+            history.pop()  # Don't store the failed user message
+            import json
+            yield f"data: {json.dumps({'type': 'message', 'content': 'An internal error occurred in the orchestrator.'})}\n\n"
 
-    # Store Atlas's response in history
-    history.append({"role": "assistant", "content": response_text})
-
-    logger.info(
-        "Response for user %d: %r",
-        user_id,
-        response_text[:120] + ("…" if len(response_text) > 120 else ""),
-    )
-
-    return ChatResponse(response=response_text)
+    from fastapi.responses import StreamingResponse
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 
 @app.delete("/chat/{user_id}/history", response_model=HistoryClearResponse, tags=["chat"])
