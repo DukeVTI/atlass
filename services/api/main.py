@@ -224,7 +224,6 @@ class ConnectionManager:
         self.active_connections: Dict[str, WebSocket] = {}
 
     async def connect(self, worker_id: str, websocket: WebSocket):
-        await websocket.accept()
         self.active_connections[worker_id] = websocket
         logger.info(f"Worker connected: {worker_id}. Total active: {len(self.active_connections)}")
 
@@ -262,6 +261,7 @@ async def websocket_endpoint(websocket: WebSocket, authorization: str = Header(N
 
     worker_id = "unknown"
     try:
+        await websocket.accept()
         # First message should be identity
         data = await websocket.receive_json()
         if data.get("type") == "identity":
