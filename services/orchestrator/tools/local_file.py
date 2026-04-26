@@ -12,11 +12,11 @@ import uuid
 import httpx
 from typing import Any, Dict, Optional
 
-from .base import BaseTool
+from .base import Tool
 
 logger = logging.getLogger("atlas.tools.local_file")
 
-class LocalFileTool(BaseTool):
+class LocalFileTool(Tool):
     """
     Bridge tool to the PC Worker.
     Sends commands to the API, which routes them via WebSocket.
