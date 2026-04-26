@@ -253,26 +253,26 @@ async def init_memory_schema(db_url: str) -> None:
     Initialize memory database schema on startup.
     Creates all tables if they don't exist.
     Enables pgvector extension for native vector search.
-    
-    Args:
-        db_url: Async SQLAlchemy database URL (e.g., postgresql+asyncpg://...)
+    Uses separate transactions so pgvector failure doesn't block table creation.
     """
     try:
         engine = create_async_engine(db_url, echo=False)
-        
-        async with engine.begin() as conn:
-            # Enable pgvector extension
-            try:
+
+        # Transaction 1: Try to enable pgvector — isolated so failure doesn't poison table creation
+        try:
+            async with engine.begin() as conn:
                 await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
                 logger.info("✓ pgvector extension enabled")
-            except Exception as e:
-                logger.warning(f"pgvector extension not available, using JSONB fallback: {e}")
-            
-            # Create all tables
+        except Exception as e:
+            logger.warning(f"pgvector extension not available, using JSONB fallback: {e}")
+            # Transaction is automatically rolled back when the context manager exits on exception
+
+        # Transaction 2: Create all tables — always runs regardless of pgvector outcome
+        async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
-        
+
         logger.info("✓ Memory schema initialized successfully")
-        
+
         await engine.dispose()
     except Exception as e:
         logger.error(f"✗ Failed to initialize memory schema: {e}")

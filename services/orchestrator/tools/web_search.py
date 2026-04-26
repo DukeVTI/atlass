@@ -41,8 +41,10 @@ class WebSearchTool(Tool):
                     "https://serpapi.com/search",
                     params={
                         "q": query,
-                        "api_key": SERPAPI_KEY,
                         "engine": "google"
+                    },
+                    headers={
+                        "X-API-KEY": SERPAPI_KEY
                     }
                 )
                 response.raise_for_status()
