@@ -25,6 +25,7 @@ from telegram.error import Forbidden, RetryAfter, TimedOut
 from telegram.ext import ContextTypes
 
 from auth import require_auth
+from transcribe import transcribe_audio
 
 logger = logging.getLogger("atlas.bot.handlers")
 
@@ -294,11 +295,61 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
 
 @require_auth
+async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    Handle incoming Telegram voice notes.
+    Downloads the OGG file, transcribes it via Groq/faster-whisper,
+    then forwards the transcript to the orchestrator exactly like a text message.
+    """
+    if not update.message or not update.message.voice:
+        return
+
+    user = update.effective_user
+    logger.info("Voice note from user %d — duration: %ds.", user.id, update.message.voice.duration)
+
+    await update.message.chat.send_action(ChatAction.TYPING)
+    bot_msg = await update.message.reply_text("🎙️ _Transcribing..._", parse_mode=ParseMode.MARKDOWN)
+
+    try:
+        # Download OGG bytes from Telegram
+        voice_file = await update.message.voice.get_file()
+        ogg_bytes = await voice_file.download_as_bytearray()
+
+        # Transcribe via Groq → faster-whisper fallback
+        transcript = await transcribe_audio(bytes(ogg_bytes))
+
+        if not transcript:
+            await bot_msg.edit_text("I couldn't make out what you said, sir. Please try again.")
+            return
+
+        logger.info("Transcript for user %d: %r", user.id, transcript[:100])
+
+        # Update message to show the transcript, then process
+        await bot_msg.edit_text(f"🎙️ _{transcript}_", parse_mode=ParseMode.MARKDOWN)
+
+        # Route to orchestrator — prefix so Claude knows it came from audio
+        prefixed = f"[Voice Note]: {transcript}"
+        stream = _call_orchestrator(
+            user_id=user.id,
+            username=user.username or user.first_name,
+            message=prefixed,
+        )
+        await _process_stream(stream, bot_msg, update.message.chat)
+
+    except Exception as e:
+        logger.error("Voice note handling failed for user %d: %s", user.id, e)
+        await bot_msg.edit_text(
+            "I had trouble processing your voice note, sir. "
+            "Please try again or type your message."
+        )
+
+
+@require_auth
 async def handle_unsupported_media(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
     """
-    Handle all non-text messages gracefully.
+    Handle all non-text, non-voice messages gracefully.
     Informs the user that multi-modal processing comes in a later layer.
     """
     if not update.message:
@@ -310,7 +361,7 @@ async def handle_unsupported_media(
     logger.info("User %d sent unsupported media: %s.", user.id, media_type)
     await update.message.reply_text(
         f"I've received your {media_type}, sir.\n\n"
-        "Full multi-modal processing — images, documents, and voice — "
+        "Full multi-modal processing — images, documents, and video — "
         "will be available in a later layer."
     )
 

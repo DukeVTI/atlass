@@ -26,6 +26,7 @@ from handlers import (
     error_handler,
     handle_edited_message,
     handle_text,
+    handle_voice,
     handle_callback,
     handle_unsupported_media,
     help_command,
@@ -83,10 +84,13 @@ def main() -> None:
     # Text messages → orchestrator
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
 
-    # Non-text media
+    # Voice notes → transcription → orchestrator
+    app.add_handler(MessageHandler(filters.VOICE, handle_voice))
+
+    # Non-text, non-voice media
     app.add_handler(
         MessageHandler(
-            ~filters.TEXT & ~filters.COMMAND & filters.UpdateType.MESSAGES,
+            ~filters.TEXT & ~filters.COMMAND & ~filters.VOICE & filters.UpdateType.MESSAGES,
             handle_unsupported_media,
         )
     )
