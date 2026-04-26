@@ -22,6 +22,10 @@ When in doubt, refer back to the PRD. Do not invent features not in the PRD.
 - Destructive actions (delete file, send email, transfer money) must have a
   confirmation gate enforced at the executor layer — not just checked in the LLM.
 
+## Deployment & Update Rules (CRITICAL GOTCHA)
+- **Code Updates:** Services like `api` and `orchestrator` use `COPY . .` in their Dockerfiles without live volume mounts for code. This means **code changes are baked into the image**.
+- To apply code updates from git, you **MUST** run `docker-compose up -d --build <service_name>`. Running `docker-compose restart` will only restart the old image with the stale code.
+
 ## Current Build Layer
 Layer 1 — Infrastructure
 - Docker Compose scaffold with all services defined
