@@ -101,7 +101,7 @@ def take_screenshot() -> list:
         import io
         
         # Grab all screens (handles hardware accelerated windows natively on Windows)
-        img = ImageGrab.grab(all_screens=True)
+        img = ImageGrab.grab(all_screens=True, include_layered_windows=True)
         
         # Convert to PNG bytes in memory
         buffer = io.BytesIO()
