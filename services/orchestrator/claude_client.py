@@ -77,15 +77,12 @@ class ClaudeClient:
         Raises:
             ClaudeError on unrecoverable API failures.
         """
-        from datetime import datetime
-        import zoneinfo
+        from datetime import datetime, timezone, timedelta
 
-        # Compute current time in Lagos (WAT)
-        try:
-            tz = zoneinfo.ZoneInfo("Africa/Lagos")
-        except Exception:
-            tz = None
-        now = datetime.now(tz)
+        # Lagos (WAT) is strictly UTC+1 all year round (no Daylight Saving Time).
+        # We use a fixed timedelta instead of zoneinfo to avoid missing 'tzdata' issues in slim Docker images.
+        wat_tz = timezone(timedelta(hours=1), name="WAT")
+        now = datetime.now(wat_tz)
         time_context = f"\n\nCURRENT SYSTEM TIME: {now.strftime('%A, %B %d, %Y - %I:%M %p (WAT)')}"
         
         dynamic_system_prompt = SYSTEM_PROMPT + time_context
