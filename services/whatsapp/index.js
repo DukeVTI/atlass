@@ -135,7 +135,8 @@ app.post("/send", async (req, res) => {
 
   try {
     // Basic number formatting - append @s.whatsapp.net if just a number
-    const jid = remote_jid.includes("@") ? remote_jid : `${remote_jid}@s.whatsapp.net`;
+    let clean_jid = remote_jid.replace(/[^0-9@.s_A-Za-z-]/g, ""); // Strip +, spaces, etc.
+    const jid = clean_jid.includes("@") ? clean_jid : `${clean_jid}@s.whatsapp.net`;
     
     // Check if the number actually exists on WhatsApp
     const [result] = await sock.onWhatsApp(jid);
