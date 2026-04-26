@@ -77,10 +77,23 @@ class ClaudeClient:
         Raises:
             ClaudeError on unrecoverable API failures.
         """
+        from datetime import datetime
+        import zoneinfo
+
+        # Compute current time in Lagos (WAT)
+        try:
+            tz = zoneinfo.ZoneInfo("Africa/Lagos")
+        except Exception:
+            tz = None
+        now = datetime.now(tz)
+        time_context = f"\n\nCURRENT SYSTEM TIME: {now.strftime('%A, %B %d, %Y - %I:%M %p (WAT)')}"
+        
+        dynamic_system_prompt = SYSTEM_PROMPT + time_context
+
         kwargs: dict = {
             "model": self.model,
             "max_tokens": self.max_tokens,
-            "system": SYSTEM_PROMPT,
+            "system": dynamic_system_prompt,
             "messages": messages,
         }
 
