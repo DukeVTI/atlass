@@ -15,6 +15,7 @@ const {
   useMultiFileAuthState,
   DisconnectReason,
   fetchLatestBaileysVersion,
+  Browsers,
 } = require("@whiskeysockets/baileys");
 const qrcode = require("qrcode-terminal");
 
@@ -39,7 +40,8 @@ async function connectToWhatsApp() {
     auth: state,
     printQRInTerminal: false,
     logger: pino({ level: "silent" }),
-    browser: ["Atlas AI", "Chrome", "1.0.0"],
+    browser: Browsers.macOS('Desktop'),
+    syncFullHistory: false,
   });
 
   sock.ev.on("connection.update", (update) => {
