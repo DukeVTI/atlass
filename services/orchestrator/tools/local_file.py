@@ -115,11 +115,28 @@ class LocalFileTool(Tool):
         tool_name = kwargs.get("tool")
         tool_kwargs = kwargs.get("kwargs", {})
         worker_name = kwargs.get("worker_name", DEFAULT_WORKER)
-        worker_id = f"pc_worker:{worker_name}"
         task_id = str(uuid.uuid4())
 
         if not tool_name:
             return "Error: 'tool' parameter is required."
+
+        # Dynamic Worker Discovery
+        # If the default fails, try 'local' as a fallback.
+        target_ids = [f"pc_worker:{worker_name}", "pc_worker:local", "pc:local", "pc:duke-laptop"]
+        
+        actual_worker_id = None
+        async with httpx.AsyncClient() as client:
+            for wid in target_ids:
+                try:
+                    status_resp = await client.get(f"{API_BASE_URL}/worker/status/{wid}", timeout=2.0)
+                    if status_resp.status_code == 200 and status_resp.json().get("connected"):
+                        actual_worker_id = wid
+                        break
+                except Exception:
+                    continue
+        
+        if not actual_worker_id:
+            return f"Error: PC Worker is offline. I tried {', '.join(target_ids)} but none are connected."
 
         payload = {
             "tool": tool_name,
@@ -129,18 +146,18 @@ class LocalFileTool(Tool):
 
         logger.info(
             "Dispatching tool '%s' to worker '%s' (task %s)",
-            tool_name, worker_id, task_id
+            tool_name, actual_worker_id, task_id
         )
 
         try:
             async with httpx.AsyncClient() as client:
                 resp = await client.post(
-                    f"{API_BASE_URL}/worker/command/{worker_id}",
+                    f"{API_BASE_URL}/worker/command/{actual_worker_id}",
                     json=payload,
                     timeout=5.0,
                 )
                 if resp.status_code != 200:
-                    return f"Error: PC Worker '{worker_name}' is offline or unreachable via API."
+                    return f"Error: Failed to dispatch to worker '{actual_worker_id}' (HTTP {resp.status_code})."
 
             # Wait for response on Redis (Task-specific list)
             r = aioredis.from_url(REDIS_URL, decode_responses=True)
