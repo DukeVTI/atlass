@@ -138,6 +138,8 @@ services:
     environment:
       API_BASE_URL: http://api:8000
       LOG_LEVEL: ${LOG_LEVEL:-info}
+    volumes:
+      - ./services/whatsapp/baileys_auth_info:/app/baileys_auth_info
     depends_on:
       api:
         condition: service_healthy
