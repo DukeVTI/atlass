@@ -1,5 +1,5 @@
 websockets
 python-dotenv
 psutil
-
 Pillow
+pyperclip
