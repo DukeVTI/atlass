@@ -3,25 +3,32 @@ Atlas Local File Tool — Layer 2 Bridge
 --------------------------------------
 Enables Atlas to interact with the user's PC via the PC Worker.
 Uses the central API as a WebSocket bridge.
+
+Protocol: sends {"tool": <name>, "kwargs": <dict>, "task_id": <uuid>}
+Matches worker.py's expected format exactly.
 """
 
+import asyncio
 import json
 import logging
 import os
 import uuid
+
 import httpx
-from typing import Any, Dict, Optional
+import redis.asyncio as aioredis
 
 from .base import Tool
 
 logger = logging.getLogger("atlas.tools.local_file")
 
+API_BASE_URL = os.getenv("API_BASE_URL", "http://api:8000")
+REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379")
+DEFAULT_WORKER = "duke-laptop"
+WORKER_TIMEOUT_SECONDS = 30
+
+
 class LocalFileTool(Tool):
-    """
-    Bridge tool to the PC Worker.
-    Sends commands to the API, which routes them via WebSocket.
-    """
-    
+
     @property
     def name(self) -> str:
         return "local_pc_command"
@@ -29,9 +36,12 @@ class LocalFileTool(Tool):
     @property
     def description(self) -> str:
         return (
-            "Interact with the local PC (Duke's laptop). "
-            "Supported commands: 'file_read', 'file_list', 'execute_script'. "
-            "Paths are relative to the Atlas Scoped Root."
+            "Interact with Duke's local Windows laptop via the PC Worker daemon. "
+            "Use this for: reading/writing/deleting local files, running shell commands, "
+            "checking system stats (CPU/RAM/battery), clipboard read/write, "
+            "listing directories, and taking screenshots. "
+            "All file paths are absolute Windows paths (e.g. C:/Users/Duke/Documents/file.txt) "
+            "or relative to the Atlas Scoped Root."
         )
 
     @property
@@ -42,84 +52,119 @@ class LocalFileTool(Tool):
             "input_schema": {
                 "type": "object",
                 "properties": {
-                    "command": {
+                    "tool": {
                         "type": "string",
-                        "enum": ["file_read", "file_list", "execute_script"],
-                        "description": "The command to execute on the local PC."
+                        "enum": [
+                            "run_shell",
+                            "read_file",
+                            "write_file",
+                            "delete_file",
+                            "list_directory",
+                            "system_status",
+                            "clipboard_read",
+                            "clipboard_write",
+                            "take_screenshot",
+                        ],
+                        "description": (
+                            "The tool to run on the local PC. "
+                            "run_shell: execute any shell command. "
+                            "read_file: read a file's contents. "
+                            "write_file: write text to a file. "
+                            "delete_file: delete a file. "
+                            "list_directory: list contents of a directory. "
+                            "system_status: get CPU, RAM, battery stats. "
+                            "clipboard_read: read current clipboard text. "
+                            "clipboard_write: write text to clipboard. "
+                            "take_screenshot: capture the screen."
+                        ),
                     },
-                    "params": {
+                    "kwargs": {
                         "type": "object",
+                        "description": (
+                            "Arguments for the tool. "
+                            "run_shell: {command: str}. "
+                            "read_file: {filepath: str}. "
+                            "write_file: {filepath: str, content: str, overwrite: bool}. "
+                            "delete_file: {filepath: str}. "
+                            "list_directory: {directory: str}. "
+                            "system_status: {} (no args). "
+                            "clipboard_read: {} (no args). "
+                            "clipboard_write: {text: str}. "
+                            "take_screenshot: {} (no args)."
+                        ),
                         "properties": {
-                            "path": {"type": "string", "description": "Path for file_read/file_list"},
-                            "script": {"type": "string", "description": "Shell script for execute_script"}
+                            "command":   {"type": "string"},
+                            "filepath":  {"type": "string"},
+                            "directory": {"type": "string"},
+                            "content":   {"type": "string"},
+                            "overwrite": {"type": "boolean"},
+                            "text":      {"type": "string"},
                         },
-                        "description": "Parameters for the command."
                     },
                     "worker_name": {
                         "type": "string",
-                        "default": "duke-laptop",
-                        "description": "The name of the worker to target."
-                    }
+                        "default": DEFAULT_WORKER,
+                        "description": "Name of the target PC worker. Defaults to duke-laptop.",
+                    },
                 },
-                "required": ["command"]
-            }
+                "required": ["tool"],
+            },
         }
 
-    async def run(self, **kwargs) -> Any:
-        command = kwargs.get("command")
-        params = kwargs.get("params", {})
-        worker_name = kwargs.get("worker_name", "duke-laptop")
+    async def run(self, **kwargs) -> str:
+        tool_name = kwargs.get("tool")
+        tool_kwargs = kwargs.get("kwargs", {})
+        worker_name = kwargs.get("worker_name", DEFAULT_WORKER)
         worker_id = f"pc_worker:{worker_name}"
-        
-        request_id = str(uuid.uuid4())
-        api_base_url = os.getenv("API_BASE_URL", "http://api:8000")
-        
+        task_id = str(uuid.uuid4())
+
+        if not tool_name:
+            return "Error: 'tool' parameter is required."
+
         payload = {
-            "command": command,
-            "params": params,
-            "request_id": request_id
+            "tool": tool_name,
+            "kwargs": tool_kwargs,
+            "task_id": task_id,
         }
-        
-        logger.info(f"Dispatching command to {worker_id}: {command}")
-        
+
+        logger.info(
+            "Dispatching tool '%s' to worker '%s' (task %s)",
+            tool_name, worker_id, task_id
+        )
+
         try:
             async with httpx.AsyncClient() as client:
-                # Dispatch command via API
                 resp = await client.post(
-                    f"{api_base_url}/worker/command/{worker_id}",
+                    f"{API_BASE_URL}/worker/command/{worker_id}",
                     json=payload,
-                    timeout=5.0
+                    timeout=5.0,
                 )
-                
                 if resp.status_code != 200:
-                    return f"Error dispatching to worker: {resp.text}"
-                
-                # In a real implementation, we would wait for the response from Redis.
-                # Since Layer 2 is primarily for infrastructure, we'll implement 
-                # a short poll here for the response.
-                
-                import asyncio
-                import redis.asyncio as aioredis
-                
-                r = aioredis.from_url(os.getenv("REDIS_URL", "redis://redis:6379"))
-                
-                # Poll for result (max 10 seconds)
-                for _ in range(20):
+                    return f"Error dispatching to worker: HTTP {resp.status_code} — {resp.text}"
+
+            r = aioredis.from_url(REDIS_URL)
+            response_key = f"atlas:responses:{worker_id}"
+            polls = WORKER_TIMEOUT_SECONDS * 2
+
+            try:
+                for _ in range(polls):
                     await asyncio.sleep(0.5)
-                    # Use a unique response queue for this request_id or just peek at worker queue
-                    # For simplicity, we peek at the worker's response queue
-                    responses = await r.lrange(f"atlas:responses:{worker_id}", 0, -1)
-                    for raw_resp in responses:
-                        resp_data = json.loads(raw_resp)
-                        if resp_data.get("request_id") == request_id:
-                            # Found our response!
-                            await r.lrem(f"atlas:responses:{worker_id}", 0, raw_resp)
-                            await r.aclose()
-                            return resp_data.get("result")
-                
+                    responses = await r.lrange(response_key, 0, -1)
+                    for raw in responses:
+                        try:
+                            data = json.loads(raw)
+                        except json.JSONDecodeError:
+                            continue
+                        if data.get("task_id") == task_id:
+                            await r.lrem(response_key, 0, raw)
+                            if data.get("status") == "error":
+                                return f"PC Worker error: {data.get('result')}"
+                            return data.get("result", "Command completed with no output.")
+            finally:
                 await r.aclose()
-                return "Command dispatched, but worker response timed out. It may still be executing."
-                
+
+            return f"PC Worker did not respond within {WORKER_TIMEOUT_SECONDS}s. Command may still be running."
+
         except Exception as e:
-            logger.error(f"LocalFileTool execution failed: {e}")
-            return f"Failed to communicate with PC Worker: {str(e)}"
+            logger.error("LocalFileTool execution failed: %s", e)
+            return f"Failed to communicate with PC Worker: {e}"
