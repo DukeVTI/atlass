@@ -59,12 +59,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger("atlas.orchestrator")
 
-# ─── Working Memory ───────────────────────────────────────────────────────────
-# Per-user conversation history. In-process, cleared on restart.
-# Max messages kept per user to stay within Claude's context window.
-
-_history: dict[int, list[dict]] = {}
-MAX_HISTORY = 20  # ~10 conversation turns (user + assistant pairs)
+from history_store import load_history, append_turn, load_summary
+import history_store
 
 # ─── Global Service Instances ─────────────────────────────────────────────────
 
@@ -160,23 +156,18 @@ async def chat(request: ChatRequest):
         message[:120] + ("…" if len(message) > 120 else ""),
     )
 
-    # Retrieve or create conversation history for this user
-    history = _history.setdefault(user_id, [])
-
-    # Append the new user message
-    history.append({"role": "user", "content": message})
-
-    # Trim history to keep within context window limits
-    if len(history) > MAX_HISTORY:
-        _history[user_id] = history[-MAX_HISTORY:]
-        history = _history[user_id]
+    # Retrieve persistent history and summary
+    await append_turn(user_id, "user", message)
+    history = await load_history(user_id)
+    prior_summary = await load_summary(user_id)
 
     async def event_generator():
         try:
             async for event_chunk in butler.run_stream(
                 messages=history,
                 user_id=user_id,
-                session_id=f"user_{user_id}"
+                session_id=f"user_{user_id}",
+                prior_summary=prior_summary
             ):
                 yield event_chunk
                 
@@ -187,7 +178,7 @@ async def chat(request: ChatRequest):
                     try:
                         event = json.loads(event_str)
                         if event.get("type") == "message":
-                            history.append({"role": "assistant", "content": event["content"]})
+                            await append_turn(user_id, "assistant", event["content"])
                             logger.info(
                                 "Response for user %d: %r",
                                 user_id,
@@ -211,9 +202,13 @@ async def clear_history(user_id: int) -> HistoryClearResponse:
     Clear the conversation history for a specific user.
     Useful for testing and for giving Atlas a fresh context.
     """
-    history = _history.pop(user_id, [])
-    count = len(history)
-    logger.info("Cleared %d history messages for user %d.", count, user_id)
+    pool = await history_store._get_pool()
+    count = await pool.fetchval(
+        "SELECT COUNT(*) FROM conversation_turns WHERE user_id = $1", user_id
+    )
+    await pool.execute(
+        "DELETE FROM conversation_turns WHERE user_id = $1", user_id
+    )
     return HistoryClearResponse(
         status="cleared", user_id=user_id, messages_cleared=count
     )

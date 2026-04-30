@@ -72,6 +72,7 @@ class ButlerLoop:
         messages: list[dict],
         user_id: int,
         session_id: str | None = None,
+        prior_summary: str | None = None,
     ):
         """
         Execute the full butler loop for one user message.
@@ -101,10 +102,20 @@ class ButlerLoop:
         )
         
         # Inject memory context as a system message after the primary system prompt
-        if memory_context:
+        if memory_context or prior_summary:
+            full_context = ""
+            if prior_summary:
+                full_context += (
+                    f"PRIOR CONVERSATION CONTEXT (summarised):\n{prior_summary}\n"
+                    f"---\n"
+                    f"The messages below are the most recent continuation of this conversation.\n\n"
+                )
+            if memory_context:
+                full_context += f"{memory_context}\n"
+            
             context_msg = {
                 "role": "user",
-                "content": f"{memory_context}\n[Please use the above context to inform your response.]"
+                "content": f"{full_context}[Please use the above context to inform your response.]"
             }
             # Insert after system message (index 0) but before conversation history
             if len(current_messages) > 0:

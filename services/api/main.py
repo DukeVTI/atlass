@@ -77,8 +77,21 @@ async def lifespan(app: FastAPI):
             );
         """)
         await conn.execute("CREATE INDEX IF NOT EXISTS contacts_search_idx ON contacts USING GIN (search_vector);")
+        
+        # Persistent Conversation History
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS conversation_turns (
+                id          BIGSERIAL PRIMARY KEY,
+                user_id     BIGINT NOT NULL,
+                role        VARCHAR(16) NOT NULL CHECK (role IN ('user', 'assistant')),
+                content     TEXT NOT NULL,
+                created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            );
+        """)
+        await conn.execute("CREATE INDEX IF NOT EXISTS idx_conv_turns_user_created ON conversation_turns (user_id, created_at DESC);")
+        
         await conn.close()
-        logger.info("Database tables initialized (audit_logs, whatsapp_messages, contacts).")
+        logger.info("Database tables initialized (audit_logs, whatsapp_messages, contacts, conversation_turns).")
     except Exception as e:
         logger.error(f"Failed to initialize Audit Log table: {e}")
         
