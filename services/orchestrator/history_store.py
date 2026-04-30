@@ -83,8 +83,15 @@ async def load_summary(user_id: int) -> Optional[str]:
     """
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
+            # 1. Get the collection ID first
+            coll_resp = await client.get(f"{CHROMA_URL}/api/v1/collections/conversation_summaries")
+            if coll_resp.status_code != 200:
+                return None
+            coll_id = coll_resp.json().get("id")
+            
+            # 2. Query using the ID
             resp = await client.post(
-                f"{CHROMA_URL}/api/v1/collections/conversation_summaries/query",
+                f"{CHROMA_URL}/api/v1/collections/{coll_id}/query",
                 json={
                     "query_texts": [f"user_{user_id}_summary"],
                     "n_results": 1,
@@ -196,19 +203,24 @@ async def _upsert_summary_in_chroma(user_id: int, summary: str) -> None:
     doc_id = f"summary_user_{user_id}"
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
-            # Ensure collection exists
-            await client.post(
+            # Ensure collection exists and get ID
+            coll_resp = await client.post(
                 f"{CHROMA_URL}/api/v1/collections",
                 json={"name": "conversation_summaries", "get_or_create": True}
             )
+            if coll_resp.status_code not in (200, 201):
+                logger.error("Failed to ensure ChromaDB collection: %s", coll_resp.text)
+                return
+            coll_id = coll_resp.json().get("id")
+
             # Delete existing summary for this user if present
             await client.post(
-                f"{CHROMA_URL}/api/v1/collections/conversation_summaries/delete",
+                f"{CHROMA_URL}/api/v1/collections/{coll_id}/delete",
                 json={"ids": [doc_id]}
             )
             # Insert fresh summary
             await client.post(
-                f"{CHROMA_URL}/api/v1/collections/conversation_summaries/add",
+                f"{CHROMA_URL}/api/v1/collections/{coll_id}/add",
                 json={
                     "ids": [doc_id],
                     "documents": [summary],
