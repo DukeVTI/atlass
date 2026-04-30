@@ -21,7 +21,7 @@ from datetime import datetime, timezone, timedelta
 
 import httpx
 import re
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton
 from telegram.constants import ChatAction, ParseMode
 from telegram.error import Forbidden, RetryAfter, TimedOut
 from telegram.ext import ContextTypes
@@ -125,6 +125,7 @@ async def _process_stream(stream, bot_msg, chat):
     Consumes the SSE generator.
     Parses [CONFIRM:ID] tags into inline keyboards.
     """
+    reply_markup = None
     try:
         async for event in stream:
             if event.get("type") == "status":
@@ -132,7 +133,6 @@ async def _process_stream(stream, bot_msg, chat):
                 await chat.send_action(ChatAction.TYPING)
             else:
                 content = event["content"]
-                reply_markup = None
                 
                 # Check for confirmation tag from security.py
                 if "[CONFIRM:" in content:
@@ -161,10 +161,19 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     """Handle /start — send a butler greeting."""
     user = update.effective_user
     logger.info("User %d triggered /start.", user.id)
+    
+    keyboard = [
+        [KeyboardButton("📧 Read Emails"), KeyboardButton("💬 WhatsApp Inbox")],
+        [KeyboardButton("🧠 My Status"), KeyboardButton("🧹 Clear History")],
+        [KeyboardButton("❓ Help")]
+    ]
+    reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+
     await update.message.reply_text(
         f"Good day, {user.first_name}.\n\n"
         "I am Atlas — your personal AI butler, running on private infrastructure.\n\n"
-        "I am now fully operational. Ask me anything."
+        "I am now fully operational. Ask me anything.",
+        reply_markup=reply_markup
     )
 
 
@@ -234,6 +243,23 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
     user = update.effective_user
     message = update.message.text
+
+    # Map menu buttons to system prompts
+    button_mapping = {
+        "📧 Read Emails": "Check my recent unread emails and summarise the important ones.",
+        "💬 WhatsApp Inbox": "Check my WhatsApp inbox for recent messages.",
+        "🧠 My Status": "Show me your current operational status and any pending tasks.",
+        "🧹 Clear History": "/clear", # Will trigger the clear flow
+        "❓ Help": "/help"
+    }
+    
+    if message in button_mapping:
+        mapped = button_mapping[message]
+        if mapped.startswith("/"):
+            # Re-route to command handler logic
+            if mapped == "/clear": return await clear_command(update, context)
+            if mapped == "/help": return await help_command(update, context)
+        message = mapped
 
     logger.info(
         "Text from user %d (%s): %r",
