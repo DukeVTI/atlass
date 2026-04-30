@@ -115,3 +115,55 @@ class WhatsAppSendTool(Tool):
         except Exception as e:
             logger.error(f"Failed to call WhatsApp send endpoint: {e}")
             return f"Error connecting to WhatsApp service: {str(e)}"
+
+class WhatsAppContactSearchTool(Tool):
+    name = "whatsapp_contact_search"
+    description = "Searches the database for a contact's WhatsApp JID and phone numbers by fuzzy matching their name. Use this before sending a WhatsApp message to ensure you have the correct JID."
+    is_destructive = False
+
+    schema = {
+        "name": "whatsapp_contact_search",
+        "description": "Search for a WhatsApp contact by name.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "The name or part of the name to search for (e.g. 'Dana' or 'Virusia')."
+                }
+            },
+            "required": ["query"]
+        }
+    }
+
+    async def run(self, query: str, **kwargs) -> Any:
+        try:
+            dsn = os.environ["POSTGRES_DSN"].replace("+asyncpg", "")
+            conn = await asyncpg.connect(dsn)
+            
+            # Using ILIKE for fuzzy search
+            sql = \"\"\"
+                SELECT name, whatsapp, phone, vip 
+                FROM contacts 
+                WHERE name ILIKE $1
+                LIMIT 5
+            \"\"\"
+            rows = await conn.fetch(sql, f"%{query}%")
+            
+            await conn.close()
+            
+            if not rows:
+                return f"No contacts found matching '{query}'."
+                
+            result = []
+            for r in rows:
+                result.append({
+                    "name": r["name"],
+                    "jid": r["whatsapp"],
+                    "phone": json.loads(r["phone"]) if r["phone"] else [],
+                    "vip": r["vip"]
+                })
+            return result
+        except Exception as e:
+            logger.error(f"Failed to search WhatsApp contacts: {e}")
+            return f"Error reading database: {str(e)}"

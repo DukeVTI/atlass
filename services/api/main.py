@@ -65,8 +65,20 @@ async def lifespan(app: FastAPI):
                 timestamp TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
             );
         """)
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS contacts (
+                id SERIAL PRIMARY KEY,
+                contact_id TEXT UNIQUE,
+                name TEXT,
+                whatsapp TEXT,
+                phone JSONB,
+                vip BOOLEAN DEFAULT FALSE,
+                search_vector tsvector GENERATED ALWAYS AS (to_tsvector('simple', coalesce(name, ''))) STORED
+            );
+        """)
+        await conn.execute("CREATE INDEX IF NOT EXISTS contacts_search_idx ON contacts USING GIN (search_vector);")
         await conn.close()
-        logger.info("Database tables initialized (audit_logs, whatsapp_messages).")
+        logger.info("Database tables initialized (audit_logs, whatsapp_messages, contacts).")
     except Exception as e:
         logger.error(f"Failed to initialize Audit Log table: {e}")
         
