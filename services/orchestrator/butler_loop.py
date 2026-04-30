@@ -26,6 +26,83 @@ from claude_client import ClaudeClient, ClaudeError
 
 logger = logging.getLogger("atlas.orchestrator.butler_loop")
 
+# Token budget — Claude Haiku 4.5 has 200k context.
+# We cap input at 150k to leave headroom for system prompt, tools, and output.
+INPUT_TOKEN_BUDGET = 150_000
+
+
+def _trim_messages_to_budget(
+    messages: list[dict],
+    current_token_count: int,
+    budget: int = INPUT_TOKEN_BUDGET,
+) -> list[dict]:
+    """
+    Trim the oldest messages from the history until we're under budget.
+
+    Rules:
+    - Never trim the last message (the active user turn).
+    - Never break a tool_use / tool_result pair — remove both or neither.
+    - Trim from the front (oldest first).
+    - Stop trimming once under budget.
+
+    Returns the trimmed message list.
+    """
+    if current_token_count <= budget:
+        return messages
+
+    trimmed = list(messages)
+    tokens_to_shed = current_token_count - budget
+
+    # Estimate ~4 chars per token as a rough guide for how much to remove.
+    # We'll keep removing from the front until we've shed enough.
+    chars_to_shed = tokens_to_shed * 4
+    chars_shed = 0
+
+    i = 0
+    while i < len(trimmed) - 1 and chars_shed < chars_to_shed:
+        msg = trimmed[i]
+        content = msg.get("content", "")
+
+        # If this is a tool_result message, skip — it pairs with the
+        # assistant tool_use above and we'd need to remove both.
+        if isinstance(content, list) and any(
+            isinstance(c, dict) and c.get("type") == "tool_result"
+            for c in content
+        ):
+            i += 1
+            continue
+
+        # If this is an assistant message with tool_use blocks,
+        # also remove the following tool_result user message.
+        if (
+            msg.get("role") == "assistant"
+            and isinstance(content, list)
+            and any(
+                hasattr(c, "type") and c.type == "tool_use"
+                for c in content
+            )
+        ):
+            content_size = len(str(content))
+            if i + 1 < len(trimmed) - 1:
+                content_size += len(str(trimmed[i + 1].get("content", "")))
+                trimmed.pop(i + 1)
+            trimmed.pop(i)
+            chars_shed += content_size
+            continue
+
+        # Normal message — remove it
+        chars_shed += len(str(content))
+        trimmed.pop(i)
+
+    logger.info(
+        "Trimmed message history: %d→%d messages to stay under %dk token budget.",
+        len(messages),
+        len(trimmed),
+        budget // 1000,
+    )
+    return trimmed
+
+
 MAX_ITERATIONS = 7
 
 # Type alias for tool functions
@@ -140,6 +217,20 @@ class ButlerLoop:
                 MAX_ITERATIONS,
                 user_id,
             )
+
+            # Count tokens and trim history if approaching context limit
+            token_count = await self.claude.count_tokens(
+                messages=current_messages,
+                tools=tools,
+            )
+            if token_count > INPUT_TOKEN_BUDGET:
+                logger.warning(
+                    "Token budget exceeded for user %d: %d tokens (budget: %d). Trimming history.",
+                    user_id, token_count, INPUT_TOKEN_BUDGET,
+                )
+                current_messages = _trim_messages_to_budget(
+                    current_messages, token_count
+                )
 
             response = await self.claude.chat(
                 messages=current_messages,
@@ -287,6 +378,12 @@ class ButlerLoop:
                     ),
                 }
             ]
+            # Guard synthesis call too
+            synth_token_count = await self.claude.count_tokens(messages=synthesis_messages)
+            if synth_token_count > INPUT_TOKEN_BUDGET:
+                synthesis_messages = _trim_messages_to_budget(
+                    synthesis_messages, synth_token_count
+                )
             final = await self.claude.chat(messages=synthesis_messages)
             final_response = final["content"]
             

@@ -166,3 +166,42 @@ class ClaudeClient:
             "tool_calls": tool_blocks,
             "raw": response,
         }
+
+    async def count_tokens(
+        self,
+        messages: list[dict],
+        tools: list[dict] | None = None,
+    ) -> int:
+        """
+        Count the tokens that would be consumed by a given messages payload.
+        Uses Anthropic's token counting endpoint — does not consume output tokens.
+        Returns 0 on failure so the caller can proceed rather than crash.
+        """
+        import time
+        from datetime import datetime, timezone, timedelta
+
+        true_utc_timestamp = time.time() + self.time_offset_seconds
+        wat_tz = timezone(timedelta(hours=1), name="WAT")
+        now = datetime.fromtimestamp(true_utc_timestamp, tz=timezone.utc).astimezone(wat_tz)
+        time_context = (
+            f"\n\n[CRITICAL SYSTEM INSTRUCTION]\n"
+            f"The current real-world time is EXACTLY: {now.strftime('%A, %B %d, %Y - %I:%M %p (WAT)')}\n"
+            f"You MUST use this exact time and date whenever the user asks about the current time or date. "
+            f"Do not use your training cutoff date."
+        )
+        dynamic_system_prompt = SYSTEM_PROMPT + time_context
+
+        kwargs: dict = {
+            "model": self.model,
+            "system": dynamic_system_prompt,
+            "messages": messages,
+        }
+        if tools:
+            kwargs["tools"] = tools
+
+        try:
+            response = await self.client.messages.count_tokens(**kwargs)
+            return response.input_tokens
+        except Exception as exc:
+            logger.warning("Token counting failed, proceeding without trim: %s", exc)
+            return 0
