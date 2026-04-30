@@ -142,12 +142,12 @@ class WhatsAppContactSearchTool(Tool):
             conn = await asyncpg.connect(dsn)
             
             # Using ILIKE for fuzzy search
-            sql = \"\"\"
+            sql = """
                 SELECT name, whatsapp, phone, vip 
                 FROM contacts 
                 WHERE name ILIKE $1
                 LIMIT 5
-            \"\"\"
+            """
             rows = await conn.fetch(sql, f"%{query}%")
             
             await conn.close()
