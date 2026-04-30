@@ -12,15 +12,16 @@ async def main():
 
     json_path = sys.argv[1]
     
-    # Load env variables
-    load_dotenv()
-
-    # In Docker, we use the env vars directly
-    password = os.getenv("POSTGRES_PASSWORD", "atlas")
-    host = os.getenv("POSTGRES_HOST", "postgres")
-    port = os.getenv("POSTGRES_PORT", "5432")
-    
-    dsn = f"postgresql://atlas:{password}@{host}:{port}/atlas"
+    # Use the same DSN as the API if available
+    dsn = os.getenv("POSTGRES_DSN")
+    if dsn:
+        dsn = dsn.replace("+asyncpg", "")
+    else:
+        # Fallback for local testing
+        password = os.getenv("POSTGRES_PASSWORD", "atlas")
+        host = os.getenv("POSTGRES_HOST", "localhost")
+        port = os.getenv("POSTGRES_PORT", "5432")
+        dsn = f"postgresql://atlas:{password}@{host}:{port}/atlas"
 
     print(f"Loading JSON from {json_path}...")
     try:
