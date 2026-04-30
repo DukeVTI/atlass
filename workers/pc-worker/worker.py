@@ -18,7 +18,7 @@ logger = logging.getLogger("pc-worker")
 # Load configuration
 VPS_URL = os.getenv("ATLAS_VPS_URL", "ws://localhost:8000")
 WORKER_TOKEN = os.getenv("WORKER_TOKEN", "atlas_pc_worker_secret")
-WORKER_NAME = os.getenv("WORKER_NAME", "local")
+WORKER_NAME = os.getenv("WORKER_NAME", "duke-laptop")
 
 async def connect_and_listen():
     uri = f"{VPS_URL}/ws?token={WORKER_TOKEN}"
@@ -32,7 +32,7 @@ async def connect_and_listen():
                 # Identify self
                 identity = {
                     "type": "identity",
-                    "worker_type": "pc",
+                    "worker_type": "pc_worker",
                     "name": WORKER_NAME
                 }
                 await websocket.send(json.dumps(identity))

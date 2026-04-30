@@ -111,7 +111,7 @@ class LocalFileTool(Tool):
             },
         }
 
-    async def run(self, **kwargs) -> str:
+    async def run(self, **kwargs) -> Any:
         tool_name = kwargs.get("tool")
         tool_kwargs = kwargs.get("kwargs", {})
         worker_name = kwargs.get("worker_name", DEFAULT_WORKER)
@@ -140,30 +140,25 @@ class LocalFileTool(Tool):
                     timeout=5.0,
                 )
                 if resp.status_code != 200:
-                    return f"Error dispatching to worker: HTTP {resp.status_code} — {resp.text}"
+                    return f"Error: PC Worker '{worker_name}' is offline or unreachable via API."
 
-            r = aioredis.from_url(REDIS_URL)
-            response_key = f"atlas:responses:{worker_id}"
-            polls = WORKER_TIMEOUT_SECONDS * 2
-
+            # Wait for response on Redis (Task-specific list)
+            r = aioredis.from_url(REDIS_URL, decode_responses=True)
             try:
-                for _ in range(polls):
-                    await asyncio.sleep(0.5)
-                    responses = await r.lrange(response_key, 0, -1)
-                    for raw in responses:
-                        try:
-                            data = json.loads(raw)
-                        except json.JSONDecodeError:
-                            continue
-                        if data.get("task_id") == task_id:
-                            await r.lrem(response_key, 0, raw)
-                            if data.get("status") == "error":
-                                return f"PC Worker error: {data.get('result')}"
-                            return data.get("result", "Command completed with no output.")
+                # BLPOP blocks until the worker pushes the result
+                result_tuple = await r.blpop(f"atlas:task_result:{task_id}", timeout=WORKER_TIMEOUT_SECONDS)
+                if not result_tuple:
+                    return f"Error: PC Worker timed out after {WORKER_TIMEOUT_SECONDS}s."
+                
+                _, value = result_tuple
+                data = json.loads(value)
+                
+                if data.get("status") == "error":
+                    return f"PC Worker error: {data.get('result')}"
+                
+                return data.get("result", "Command completed successfully.")
             finally:
                 await r.aclose()
-
-            return f"PC Worker did not respond within {WORKER_TIMEOUT_SECONDS}s. Command may still be running."
 
         except Exception as e:
             logger.error("LocalFileTool execution failed: %s", e)

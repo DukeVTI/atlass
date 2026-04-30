@@ -179,19 +179,5 @@ class RejectActionTool(Tool):
 registry.register(RejectActionTool())
 
 # ─── Register PC Worker Tools ───
-from .pc_worker import (
-    PCRunShellTool, 
-    PCReadFileTool, 
-    PCSystemStatusTool,
-    PCListDirectoryTool,
-    PCWriteFileTool,
-    PCDeleteFileTool,
-    PCTakeScreenshotTool
-)
-registry.register(PCRunShellTool())
-registry.register(PCReadFileTool())
-registry.register(PCSystemStatusTool())
-registry.register(PCListDirectoryTool())
-registry.register(PCWriteFileTool())
-registry.register(PCDeleteFileTool())
-registry.register(PCTakeScreenshotTool())
+from .local_file import LocalFileTool
+registry.register(LocalFileTool())
