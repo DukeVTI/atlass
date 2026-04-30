@@ -37,9 +37,10 @@ class ConfirmationManager:
     @staticmethod
     async def get_pending_action(confirmation_id: str) -> dict | None:
         """
-        Retrieves a pending action.
+        Retrieves a pending action. Normalizes ID (uppercase, stripped).
         """
-        data = await redis_client.get(f"conf:{confirmation_id}")
+        clean_id = str(confirmation_id).strip().upper()
+        data = await redis_client.get(f"conf:{clean_id}")
         if data:
             return json.loads(data)
         return None
@@ -47,6 +48,7 @@ class ConfirmationManager:
     @staticmethod
     async def clear_action(confirmation_id: str):
         """
-        Deletes the action from cache.
+        Deletes the action from cache. Normalizes ID.
         """
-        await redis_client.delete(f"conf:{confirmation_id}")
+        clean_id = str(confirmation_id).strip().upper()
+        await redis_client.delete(f"conf:{clean_id}")

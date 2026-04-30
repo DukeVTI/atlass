@@ -98,9 +98,10 @@ class ApproveActionTool(Tool):
     }
 
     async def run(self, confirmation_id: str, **kwargs) -> str:
-        pending = await ConfirmationManager.get_pending_action(confirmation_id)
+        clean_id = str(confirmation_id).strip().upper()
+        pending = await ConfirmationManager.get_pending_action(clean_id)
         if not pending:
-            return f"Error: Confirmation ID {confirmation_id} is invalid or has expired."
+            return f"Error: Confirmation ID {clean_id} is invalid or has expired."
 
         target_tool_name = pending["tool_name"]
         target_inputs = pending["inputs"]
@@ -149,9 +150,10 @@ class RejectActionTool(Tool):
     }
 
     async def run(self, confirmation_id: str, **kwargs) -> str:
-        pending = await ConfirmationManager.get_pending_action(confirmation_id)
+        clean_id = str(confirmation_id).strip().upper()
+        pending = await ConfirmationManager.get_pending_action(clean_id)
         if not pending:
-            return f"Error: Confirmation ID {confirmation_id} is invalid or has already expired."
+            return f"Error: Confirmation ID {clean_id} is invalid or has already expired."
 
         target_tool_name = pending["tool_name"]
         await ConfirmationManager.clear_action(confirmation_id)
