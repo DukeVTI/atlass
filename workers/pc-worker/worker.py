@@ -3,11 +3,14 @@ import websockets
 import json
 import os
 import logging
+from pathlib import Path
 from dotenv import load_dotenv
 
-from local_tools import TOOL_REGISTRY
+# Find the .env in the same directory as this script
+env_path = Path(__file__).parent / ".env"
+load_dotenv(dotenv_path=env_path)
 
-load_dotenv()
+from local_tools import TOOL_REGISTRY
 
 logging.basicConfig(
     level=logging.INFO,
@@ -19,6 +22,11 @@ logger = logging.getLogger("pc-worker")
 VPS_URL = os.getenv("ATLAS_VPS_URL", "ws://localhost:8000")
 WORKER_TOKEN = os.getenv("WORKER_TOKEN", "atlas_pc_worker_secret")
 WORKER_NAME = os.getenv("WORKER_NAME", "duke-laptop")
+
+# Safety override: If the name is 'local', force it to 'duke-laptop' 
+# to match what the Orchestrator expects.
+if WORKER_NAME == "local":
+    WORKER_NAME = "duke-laptop"
 
 async def connect_and_listen():
     uri = f"{VPS_URL}/ws?token={WORKER_TOKEN}"
