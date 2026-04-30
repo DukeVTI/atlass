@@ -79,12 +79,12 @@ registry = ToolRegistry()
 # ----------------------------------------------------
 class ApproveActionTool(Tool):
     name = "approve_action"
-    description = "Approves and executes a paused destructive action using its Confirmation ID. You must only call this AFTER asking Duke."
+    description = "Approves and executes a paused destructive action using its Confirmation ID. Call this immediately when the user provides an approval or confirmation command."
     is_destructive = False
 
     schema = {
         "name": "approve_action",
-        "description": "Approves and executes a paused destructive action using its Confirmation ID.",
+        "description": "Approves and executes a paused destructive action using its Confirmation ID. Call this immediately when the user says 'Approve' or 'Go ahead' followed by an ID.",
         "input_schema": {
             "type": "object",
             "properties": {
@@ -131,12 +131,12 @@ registry.register(ApproveActionTool())
 
 class RejectActionTool(Tool):
     name = "reject_action"
-    description = "Rejects and cancels a paused destructive action using its Confirmation ID. You must only call this AFTER asking Duke and Duke says NO."
+    description = "Rejects and cancels a paused destructive action using its Confirmation ID. Call this when the user explicitly denies or rejects a pending action."
     is_destructive = False
 
     schema = {
         "name": "reject_action",
-        "description": "Rejects and permanently cancels a paused destructive action.",
+        "description": "Rejects and permanently cancels a paused destructive action. Call this when the user says 'No' or 'Cancel' followed by an ID.",
         "input_schema": {
             "type": "object",
             "properties": {
