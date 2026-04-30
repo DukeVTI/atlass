@@ -30,15 +30,18 @@ class ToolRegistry:
         # Executor-Level Confirmation Gate
         if tool.is_destructive:
             confirm_id = await ConfirmationManager.intercept(tool_name, inputs)
-            # Log as 'paused'
+            # Log as 'paused' (Security Gate)
             await self._audit_log(tool_name, inputs, "paused", f"Action paused. Confirmation ID: {confirm_id}", user_id)
             return confirm_id
+
+        # Log "executing" BEFORE call
+        await self._audit_log(tool_name, inputs, "executing", "Calling tool.run()...", user_id)
 
         try:
             result = await tool.run(**inputs)
             serialized_result = json.dumps(result) if isinstance(result, (dict, list)) else str(result)
             
-            # Fire-and-forget Audit Log
+            # Log "success" AFTER call
             await self._audit_log(tool_name, inputs, "success", serialized_result, user_id)
             
             return serialized_result
@@ -105,6 +108,7 @@ class ApproveActionTool(Tool):
 
         target_tool_name = pending["tool_name"]
         target_inputs = pending["inputs"]
+        user_id = kwargs.get("user_id", "duke")
 
         # Run without re-triggering the gate!
         if target_tool_name not in registry._tools:
@@ -113,18 +117,30 @@ class ApproveActionTool(Tool):
         try:
             target_tool = registry._tools[target_tool_name]
             logger.info(f"Executing approved action: {target_tool_name}")
+            
+            # Log "executing" for the TARGET tool
+            await registry._audit_log(target_tool_name, target_inputs, "executing_approved", "Executing approved action...", user_id)
+            
             result = await target_tool.run(**target_inputs)
             
             # Clear cache upon success
             await ConfirmationManager.clear_action(confirmation_id)
             
-            if isinstance(result, (dict, list)):
-                return json.dumps(result)
-            return str(result)
+            serialized_result = json.dumps(result) if isinstance(result, (dict, list)) else str(result)
+            
+            # Log "success" for the TARGET tool
+            await registry._audit_log(target_tool_name, target_inputs, "success_approved", serialized_result, user_id)
+            
+            return serialized_result
             
         except Exception as exc:
             logger.error(f"Execution error in approved tool {target_tool_name}: {exc}")
-            return f"Error executing approved action {target_tool_name}: {str(exc)}"
+            error_msg = f"Error executing approved action {target_tool_name}: {str(exc)}"
+            
+            # Log failure for the TARGET tool
+            await registry._audit_log(target_tool_name, target_inputs, "error_approved", error_msg, user_id)
+            
+            return error_msg
 
 # Register the native Security Gate Tools immediately
 registry.register(ApproveActionTool())
