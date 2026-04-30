@@ -98,6 +98,7 @@ class WhatsAppSendTool(Tool):
     async def run(self, remote_jid: str, text: str, **kwargs) -> Any:
         try:
             whatsapp_url = os.environ.get("WHATSAPP_URL", "http://whatsapp:3000")
+            logger.info(f"Calling WhatsApp sidecar at {whatsapp_url}/send for JID {remote_jid}")
             
             async with httpx.AsyncClient(timeout=10.0) as client:
                 response = await client.post(
@@ -105,10 +106,14 @@ class WhatsAppSendTool(Tool):
                     json={"remote_jid": remote_jid, "text": text}
                 )
                 
+                logger.info(f"WhatsApp sidecar response: {response.status_code} - {response.text}")
+
                 if response.status_code == 200:
                     return f"Successfully sent WhatsApp message to {remote_jid}."
                 elif response.status_code == 404:
                     return f"Failed: {remote_jid} is not a registered WhatsApp number."
+                elif response.status_code == 503:
+                    return "Failed: WhatsApp service is currently disconnected. Please ask Duke to check the logs and re-scan the QR code."
                 else:
                     err = response.json().get("error", "Unknown error")
                     return f"Failed to send message: {err}"

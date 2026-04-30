@@ -123,13 +123,14 @@ app.get("/health", (_req, res) => {
 
 // Outbound send endpoint
 app.post("/send", async (req, res) => {
+  console.log(`[atlas.whatsapp] POST /send - Body:`, JSON.stringify(req.body));
   const { remote_jid, text } = req.body;
   
   if (!remote_jid || !text) {
     return res.status(400).json({ error: "Missing remote_jid or text" });
   }
   
-  if (!sock) {
+  if (!sock || !sock.user) {
     return res.status(503).json({ error: "WhatsApp not connected yet" });
   }
 
@@ -138,15 +139,23 @@ app.post("/send", async (req, res) => {
     let clean_jid = remote_jid.replace(/[^0-9@.s_A-Za-z-]/g, ""); // Strip +, spaces, etc.
     const jid = clean_jid.includes("@") ? clean_jid : `${clean_jid}@s.whatsapp.net`;
     
+    console.log(`[atlas.whatsapp] Attempting to send to JID: ${jid}`);
+
     // Check if the number actually exists on WhatsApp
-    const [result] = await sock.onWhatsApp(jid);
-    if (!result || !result.exists) {
+    const onWa = await sock.onWhatsApp(jid);
+    console.log(`[atlas.whatsapp] onWhatsApp check result:`, JSON.stringify(onWa));
+
+    if (!onWa || onWa.length === 0 || !onWa[0].exists) {
+      console.warn(`[atlas.whatsapp] JID ${jid} does not exist on WhatsApp.`);
       return res.status(404).json({ error: "Number is not registered on WhatsApp" });
     }
     
-    await sock.sendMessage(jid, { text });
-    console.log(`[atlas.whatsapp] Sent message to ${jid}`);
-    res.json({ status: "sent", jid });
+    const targetJid = onWa[0].jid; // Use the canonical JID from onWhatsApp
+    console.log(`[atlas.whatsapp] Resolved canonical JID: ${targetJid}`);
+
+    await sock.sendMessage(targetJid, { text });
+    console.log(`[atlas.whatsapp] Successfully sent message to ${targetJid}`);
+    res.json({ status: "sent", jid: targetJid });
   } catch (err) {
     console.error(`[atlas.whatsapp] Error sending message: ${err.message}`);
     res.status(500).json({ error: err.message });
