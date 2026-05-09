@@ -381,16 +381,15 @@ async def websocket_endpoint(websocket: WebSocket, authorization: str = Header(N
 
 @app.post("/worker/command/{worker_id}", tags=["worker"])
 async def send_worker_command(worker_id: str, command: dict):
-    """
-    Endpoint for the Orchestrator to send commands to a specific worker.
-    """
-    success = await manager.send_command(worker_id, command)
+    from urllib.parse import unquote
+    decoded_id = unquote(worker_id)
+    success = await manager.send_command(decoded_id, command)
     if not success:
-        raise HTTPException(status_code=404, detail="Worker not connected")
+        raise HTTPException(status_code=404, detail=f"Worker not connected: {decoded_id}")
     return {"status": "dispatched"}
-
 
 @app.get("/worker/status/{worker_id}", tags=["worker"])
 async def worker_status(worker_id: str) -> dict:
-    """Returns the connection status and offline duration of a worker."""
-    return manager.get_status(worker_id)
+    from urllib.parse import unquote
+    decoded_id = unquote(worker_id)
+    return manager.get_status(decoded_id)
