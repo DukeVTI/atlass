@@ -13,9 +13,11 @@ Future layers will add:
   - /task            — task queue interface
 """
 
+import asyncio
 import logging
 import os
 import json
+import time
 from typing import Dict
 from contextlib import asynccontextmanager
 
@@ -26,6 +28,10 @@ from fastapi import FastAPI, Request, Header, HTTPException, WebSocket, WebSocke
 from fastapi.responses import JSONResponse
 import hmac
 import hashlib
+
+# ─── WebSocket Heartbeat Config ───────────────────────────────────────────────
+WS_PING_INTERVAL = 30   # Send a ping every 30 seconds
+WS_PONG_TIMEOUT  = 10   # Close connection if no pong within 10 seconds
 
 # ─── Logging ──────────────────────────────────────────────────────────────────
 
@@ -332,52 +338,100 @@ manager = ConnectionManager()
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket, authorization: str = Header(None)):
     """
-    WebSocket endpoint for workers.
-    Expects 'Bearer <WORKER_TOKEN>' in Authorization header or query param.
+    WebSocket endpoint for workers (PC and Mobile).
+
+    Heartbeat Protocol:
+      - Server sends {"type": "ping"} every WS_PING_INTERVAL seconds.
+      - Worker must reply with {"type": "pong"} within WS_PONG_TIMEOUT seconds.
+      - If no pong arrives in time, the server closes the connection (code 1001).
+      - This prevents silent middlebox drops on mobile carrier networks.
     """
-    # Simple token-based auth
     expected_token = os.getenv("WORKER_TOKEN", "atlas_pc_worker_secret")
-    
-    # Check header or query param
+
     token = authorization
     if not token:
         token = websocket.query_params.get("token")
-    
+
     if not token or (token != f"Bearer {expected_token}" and token != expected_token):
         logger.warning("Rejected WebSocket connection: Invalid token.")
         await websocket.close(code=1008)
         return
 
     worker_id = "unknown"
+    last_pong = time.monotonic()   # Track when we last heard from the client
+
+    async def ping_loop():
+        """Sends periodic pings and disconnects if no pong is received."""
+        nonlocal last_pong
+        await asyncio.sleep(WS_PING_INTERVAL)   # Initial grace period
+        while True:
+            try:
+                await websocket.send_json({"type": "ping"})
+                logger.debug("Sent ping to %s", worker_id)
+                await asyncio.sleep(WS_PONG_TIMEOUT)
+                elapsed = time.monotonic() - last_pong
+                if elapsed > WS_PING_INTERVAL + WS_PONG_TIMEOUT:
+                    logger.warning(
+                        "No pong from %s in %.0fs — closing stale connection.",
+                        worker_id, elapsed
+                    )
+                    await websocket.close(code=1001)
+                    return
+                await asyncio.sleep(WS_PING_INTERVAL - WS_PONG_TIMEOUT)
+            except Exception:
+                return  # Connection already gone
+
     try:
         await websocket.accept()
-        # First message should be identity
+
+        # First message must be the identity handshake
         data = await websocket.receive_json()
         if data.get("type") == "identity":
             worker_id = f"{data.get('worker_type')}:{data.get('name')}"
             await manager.connect(worker_id, websocket)
-            
-            # Keep connection alive and listen for responses
+            last_pong = time.monotonic()
+            logger.info("Worker identified: %s", worker_id)
+        else:
+            logger.warning("First message was not identity — closing.")
+            await websocket.close(code=1002)
+            return
+
+        # Run ping loop concurrently with the receive loop
+        ping_task = asyncio.create_task(ping_loop())
+
+        try:
             while True:
-                response = await websocket.receive_json()
-                logger.info(f"Response from {worker_id}: {response.get('status')}")
-                
-                # Push response to a task-specific Redis list so the Orchestrator can BLPOP it
-                try:
-                    task_id = response.get("task_id", "unknown")
-                    r = aioredis.from_url(os.environ["REDIS_URL"])
-                    # Expire the list after 60 seconds just to keep Redis clean
-                    await r.lpush(f"atlas:task_result:{task_id}", json.dumps(response))
-                    await r.expire(f"atlas:task_result:{task_id}", 60)
-                    await r.aclose()
-                except Exception as e:
-                    logger.error(f"Failed to push worker response to Redis: {e}")
+                message = await websocket.receive_json()
+                msg_type = message.get("type")
+
+                if msg_type == "pong":
+                    # Heartbeat reply — reset the liveness timer
+                    last_pong = time.monotonic()
+                    logger.debug("Pong received from %s", worker_id)
+                    continue
+
+                # Tool execution response from the worker
+                task_id = message.get("task_id")
+                if task_id:
+                    logger.info("Response from %s: task=%s status=%s", worker_id, task_id, message.get("status"))
+                    try:
+                        r = aioredis.from_url(os.environ["REDIS_URL"])
+                        await r.lpush(f"atlas:task_result:{task_id}", json.dumps(message))
+                        await r.expire(f"atlas:task_result:{task_id}", 60)
+                        await r.aclose()
+                    except Exception as e:
+                        logger.error("Failed to push worker response to Redis: %s", e)
+
+        finally:
+            ping_task.cancel()
 
     except WebSocketDisconnect:
         manager.disconnect(worker_id)
+        logger.info("Worker %s disconnected cleanly.", worker_id)
     except Exception as e:
-        logger.error(f"WebSocket error for {worker_id}: {e}")
+        logger.error("WebSocket error for %s: %s", worker_id, e)
         manager.disconnect(worker_id)
+
 
 @app.post("/worker/command/{worker_id}", tags=["worker"])
 async def send_worker_command(worker_id: str, command: dict):
