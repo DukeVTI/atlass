@@ -2,18 +2,17 @@
  * useAtlasDaemon
  * --------------
  * Core WebSocket connection to the Atlas VPS Brain.
- * Identifies as a mobile_worker, receives tool commands,
- * dispatches them to the local tool registry, and returns results.
  *
- * Heartbeat Protocol:
- *   - Server sends {"type": "ping"} every 30s.
- *   - This hook replies with {"type": "pong"} immediately.
- *   - Client also sends its own ping every 25s as a belt-and-suspenders
- *     measure against aggressive carrier NAT timeouts.
+ * Key fixes over previous version:
+ *  1. Connection guard checks CONNECTING state too — prevents 4 simultaneous connections.
+ *  2. Generation counter — each connect() call gets a unique ID. The onclose handler
+ *     only acts if its generation matches the current one, eliminating the
+ *     intentionalClose ref race condition that caused clean-disconnect loops.
+ *  3. Belt-and-suspenders client ping every 25s keeps NAT middleboxes warm.
  *
- * Task Protocol (unchanged):
- *   RECEIVE: { task_id, tool, kwargs }
- *   SEND:    { task_id, status, result }
+ * Protocol:
+ *   RECEIVE: { type: "ping" }              → reply { type: "pong" }
+ *   RECEIVE: { task_id, tool, kwargs }     → execute tool, reply { task_id, status, result }
  */
 
 import { useEffect, useRef, useCallback, useState } from 'react';
@@ -33,9 +32,6 @@ interface UseDaemonOptions {
   workerName?: string;
 }
 
-// Belt-and-suspenders: client sends a keepalive ping every 25s
-// even if the server doesn't ask for one. This prevents NAT
-// middleboxes from dropping the TCP connection during silence.
 const CLIENT_PING_INTERVAL_MS = 25_000;
 
 export function useAtlasDaemon({
@@ -46,43 +42,36 @@ export function useAtlasDaemon({
   const ws = useRef<WebSocket | null>(null);
   const [status, setStatus] = useState<DaemonStatus>('disconnected');
   const [lastTool, setLastTool] = useState<string | null>(null);
+
+  // ── Generation counter ───────────────────────────────────────────────────────
+  // Every new connect() call increments this. Stale onclose handlers compare
+  // their captured generation against the current value — if they don't match,
+  // they belong to a superseded connection and do nothing.
+  const generation = useRef(0);
+
   const reconnectDelay = useRef(3000);
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pingTimer = useRef<ReturnType<typeof setInterval> | null>(null);
-  const intentionalClose = useRef(false);
 
-  // ── Cleanup helpers ──────────────────────────────────────────────────────
   const clearPingTimer = useCallback(() => {
-    if (pingTimer.current) {
-      clearInterval(pingTimer.current);
-      pingTimer.current = null;
-    }
+    if (pingTimer.current) { clearInterval(pingTimer.current); pingTimer.current = null; }
   }, []);
 
   const clearReconnectTimer = useCallback(() => {
-    if (reconnectTimer.current) {
-      clearTimeout(reconnectTimer.current);
-      reconnectTimer.current = null;
-    }
+    if (reconnectTimer.current) { clearTimeout(reconnectTimer.current); reconnectTimer.current = null; }
   }, []);
 
-  // ── Tool execution ───────────────────────────────────────────────────────
+  // ── Tool execution ───────────────────────────────────────────────────────────
   const executeTask = useCallback(async (task: AtlasTask) => {
     const { task_id, tool, kwargs } = task;
     setLastTool(tool);
-
     console.log(`[Atlas] Executing tool: ${tool}`, kwargs);
 
     const handler = TOOL_REGISTRY[tool];
     if (!handler) {
-      ws.current?.send(JSON.stringify({
-        task_id,
-        status: 'error',
-        result: `Unknown tool: ${tool}`,
-      }));
+      ws.current?.send(JSON.stringify({ task_id, status: 'error', result: `Unknown tool: ${tool}` }));
       return;
     }
-
     try {
       const result = await handler(kwargs);
       ws.current?.send(JSON.stringify({ task_id, status: 'success', result }));
@@ -94,103 +83,114 @@ export function useAtlasDaemon({
     }
   }, []);
 
-  // ── Connection ───────────────────────────────────────────────────────────
+  // ── Connection ───────────────────────────────────────────────────────────────
   const connect = useCallback(() => {
-    if (ws.current?.readyState === WebSocket.OPEN) return;
+    // Guard: block if already OPEN or CONNECTING (readyState 0 or 1)
+    const state = ws.current?.readyState;
+    if (state === WebSocket.OPEN || state === WebSocket.CONNECTING) {
+      console.log('[Atlas] Connection already active — skipping duplicate connect.');
+      return;
+    }
+
+    // Claim this generation so stale handlers know they're obsolete
+    generation.current += 1;
+    const myGeneration = generation.current;
 
     const uri = `${vpsUrl}/ws?token=${workerToken}`;
-    console.log(`[Atlas] Connecting to ${uri}`);
+    console.log(`[Atlas] Connecting (gen ${myGeneration}) to ${uri}`);
     setStatus('connecting');
 
-    try {
-      ws.current = new WebSocket(uri);
+    const socket = new WebSocket(uri);
+    ws.current = socket;
 
-      ws.current.onopen = () => {
-        console.log('[Atlas] Connected to VPS Brain.');
+    socket.onopen = () => {
+      if (generation.current !== myGeneration) { socket.close(); return; }
+      console.log(`[Atlas] Connected (gen ${myGeneration}).`);
 
-        // Send identity handshake immediately
-        ws.current?.send(JSON.stringify({
-          type: 'identity',
-          worker_type: 'mobile',
-          name: workerName,
-        }));
+      socket.send(JSON.stringify({ type: 'identity', worker_type: 'mobile', name: workerName }));
+      setStatus('connected');
+      reconnectDelay.current = 3000;
 
-        setStatus('connected');
-        reconnectDelay.current = 3000;
-
-        // Start client-side keepalive ping
-        clearPingTimer();
-        pingTimer.current = setInterval(() => {
-          if (ws.current?.readyState === WebSocket.OPEN) {
-            ws.current.send(JSON.stringify({ type: 'ping' }));
-            console.debug('[Atlas] Sent keepalive ping.');
-          }
-        }, CLIENT_PING_INTERVAL_MS);
-      };
-
-      ws.current.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data as string);
-
-          // Server heartbeat — reply with pong immediately
-          if (data.type === 'ping') {
-            ws.current?.send(JSON.stringify({ type: 'pong' }));
-            console.debug('[Atlas] Received ping → sent pong.');
-            return;
-          }
-
-          // Tool execution task
-          if (data.task_id && data.tool) {
-            executeTask(data as AtlasTask);
-          }
-        } catch (e) {
-          console.warn('[Atlas] Failed to parse incoming message:', e);
+      clearPingTimer();
+      pingTimer.current = setInterval(() => {
+        if (socket.readyState === WebSocket.OPEN) {
+          socket.send(JSON.stringify({ type: 'ping' }));
+          console.debug('[Atlas] Sent keepalive ping.');
         }
-      };
+      }, CLIENT_PING_INTERVAL_MS);
+    };
 
-      ws.current.onerror = (e) => {
-        console.error('[Atlas] WebSocket error:', e);
-        setStatus('error');
-      };
-
-      ws.current.onclose = (event) => {
-        clearPingTimer();
-        setStatus('disconnected');
-        console.log(`[Atlas] Connection closed — code: ${event.code}, reason: ${event.reason || 'none'}`);
-
-        if (!intentionalClose.current) {
-          console.log(`[Atlas] Reconnecting in ${reconnectDelay.current / 1000}s…`);
-          clearReconnectTimer();
-          reconnectTimer.current = setTimeout(() => {
-            reconnectDelay.current = Math.min(reconnectDelay.current * 2, 60_000);
-            connect();
-          }, reconnectDelay.current);
+    socket.onmessage = (event) => {
+      if (generation.current !== myGeneration) return;
+      try {
+        const data = JSON.parse(event.data as string);
+        if (data.type === 'ping') {
+          socket.send(JSON.stringify({ type: 'pong' }));
+          console.debug('[Atlas] ping → pong');
+          return;
         }
-      };
-    } catch (e) {
-      console.error('[Atlas] Failed to create WebSocket:', e);
+        if (data.task_id && data.tool) {
+          executeTask(data as AtlasTask);
+        }
+      } catch (e) {
+        console.warn('[Atlas] Failed to parse message:', e);
+      }
+    };
+
+    socket.onerror = () => {
+      if (generation.current !== myGeneration) return;
+      console.error('[Atlas] WebSocket error.');
       setStatus('error');
-    }
+    };
+
+    socket.onclose = (event) => {
+      clearPingTimer();
+
+      // If this isn't the current generation, a newer connection has taken over — do nothing.
+      if (generation.current !== myGeneration) {
+        console.debug(`[Atlas] Stale onclose (gen ${myGeneration}) — ignored.`);
+        return;
+      }
+
+      setStatus('disconnected');
+      console.log(`[Atlas] Connection closed — code: ${event.code} reason: ${event.reason || 'none'}`);
+
+      // code 1000 = normal closure initiated by us (intentional)
+      // code 1001 = server going away (ping timeout)
+      // Anything else = unexpected — reconnect
+      const shouldReconnect = event.code !== 1000;
+      if (shouldReconnect) {
+        console.log(`[Atlas] Reconnecting in ${reconnectDelay.current / 1000}s…`);
+        clearReconnectTimer();
+        reconnectTimer.current = setTimeout(() => {
+          reconnectDelay.current = Math.min(reconnectDelay.current * 2, 60_000);
+          connect();
+        }, reconnectDelay.current);
+      }
+    };
   }, [vpsUrl, workerToken, workerName, executeTask, clearPingTimer, clearReconnectTimer]);
 
+  // ── Manual disconnect (code 1000 = intentional, no reconnect) ────────────────
   const disconnect = useCallback(() => {
-    intentionalClose.current = true;
+    generation.current += 1; // Invalidate any pending onclose handlers
     clearPingTimer();
     clearReconnectTimer();
     ws.current?.close(1000, 'User disconnected');
     setStatus('disconnected');
   }, [clearPingTimer, clearReconnectTimer]);
 
+  // ── Lifecycle ────────────────────────────────────────────────────────────────
   useEffect(() => {
-    intentionalClose.current = false;
     connect();
     return () => {
-      intentionalClose.current = true;
+      // Increment generation so onclose from this connection does not reconnect
+      generation.current += 1;
       clearPingTimer();
       clearReconnectTimer();
-      ws.current?.close();
+      ws.current?.close(1000, 'Component unmounted');
     };
-  }, [connect, clearPingTimer, clearReconnectTimer]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Empty deps — connect once on mount, clean up on unmount. Period.
 
   return { status, lastTool, connect, disconnect };
 }
