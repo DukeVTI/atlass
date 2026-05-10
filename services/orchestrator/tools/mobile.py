@@ -1,11 +1,9 @@
 """
-Atlas Mobile Tool — VPS Side
+Atlas Mobile Tool - VPS Side
 -----------------------------
-Add this to services/orchestrator/tools/ and register it in main.py.
-
-Allows Atlas to command Duke's Android phone via the mobile WebSocket worker.
-Protocol matches LocalFileTool exactly — sends to the API hub which routes
-via WebSocket to the 'mobile:duke-android' worker.
+Dispatches commands to Duke's Android phone via the mobile WebSocket worker.
+Protocol matches LocalFileTool exactly: sends task to the API hub which routes
+via WebSocket to the 'mobile:duke-android' worker, then polls Redis for result.
 """
 
 import asyncio
@@ -28,7 +26,7 @@ WORKER_TIMEOUT_SECONDS = 20
 
 
 class MobileTool(Tool):
-    """Bridge tool to Duke's Android phone via the mobile WebSocket worker."""
+    """Bridge tool that sends commands to Duke's Android phone."""
 
     @property
     def name(self) -> str:
@@ -69,14 +67,14 @@ class MobileTool(Tool):
                         "description": (
                             "The tool to run on the phone. "
                             "speak: {text, rate?, pitch?, language?}. "
-                            "stop_speaking: {} — stops current TTS. "
-                            "get_location: {} — returns GPS coordinates and address. "
-                            "read_sms: {box?, maxCount?, filter?} — read SMS inbox/sent. "
-                            "send_sms: {to, message} — send SMS to a number. "
-                            "push_notification: {title, body, urgent?} — push to phone. "
-                            "read_notifications: {limit?, appFilter?} — recent notifications. "
-                            "get_device_stats: {} — battery, OS, memory. "
-                            "read_contacts: {query?, limit?} — search phone contacts."
+                            "stop_speaking: {} - stops current TTS. "
+                            "get_location: {} - returns GPS coordinates and address. "
+                            "read_sms: {box?, maxCount?, filter?} - read SMS inbox/sent. "
+                            "send_sms: {to, message} - send SMS to a number. "
+                            "push_notification: {title, body, urgent?} - push to phone. "
+                            "read_notifications: {limit?, appFilter?} - recent notifications. "
+                            "get_device_stats: {} - battery, OS, memory. "
+                            "read_contacts: {query?, limit?} - search phone contacts."
                         ),
                     },
                     "kwargs": {
@@ -122,7 +120,10 @@ class MobileTool(Tool):
 
         payload = {"tool": tool_name, "kwargs": tool_kwargs, "task_id": task_id}
 
-        logger.info("Dispatching mobile tool '%s' to '%s' (task %s)", tool_name, worker_id, task_id)
+        logger.info(
+            "Dispatching mobile tool '%s' to '%s' (task %s)",
+            tool_name, worker_id, task_id
+        )
 
         try:
             async with httpx.AsyncClient() as client:
@@ -136,21 +137,20 @@ class MobileTool(Tool):
 
             r = aioredis.from_url(REDIS_URL)
             response_key = f"atlas:task_result:{task_id}"
-            polls = WORKER_TIMEOUT_SECONDS * 2
 
             try:
-                for _ in range(polls):
+                for _ in range(WORKER_TIMEOUT_SECONDS * 2):
                     await asyncio.sleep(0.5)
                     raw = await r.lpop(response_key)
                     if raw:
                         data = json.loads(raw)
                         if data.get("status") == "error":
                             return f"Phone error: {data.get('result')}"
-                        return data.get("result", "Command completed.")
+                        return str(data.get("result", "Command completed."))
             finally:
                 await r.aclose()
 
-            return f"Phone did not respond within {WORKER_TIMEOUT_SECONDS}s. It may be offline."
+            return f"Phone did not respond within {WORKER_TIMEOUT_SECONDS}s. It may be offline or screen locked."
 
         except Exception as e:
             logger.error("MobileTool execution failed: %s", e)
