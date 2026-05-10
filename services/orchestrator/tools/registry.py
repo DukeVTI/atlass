@@ -181,3 +181,7 @@ registry.register(RejectActionTool())
 # ─── Register PC Worker Tools ───
 from .local_file import LocalFileTool
 registry.register(LocalFileTool())
+
+# ─── Register Android Mobile Worker Tools ───
+from .mobile import MobileTool
+registry.register(MobileTool())
