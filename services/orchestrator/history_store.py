@@ -176,7 +176,7 @@ async def _summarise_via_claude(transcript: str) -> Optional[str]:
     try:
         client = anthropic.AsyncAnthropic(api_key=api_key)
         response = await client.messages.create(
-            model="claude-3-5-haiku-20241022",
+            model="claude-haiku-4-5-20251001",
             max_tokens=512,
             system=(
                 "You are a memory compression system for a personal AI butler called Atlas. "
