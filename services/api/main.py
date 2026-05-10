@@ -366,17 +366,21 @@ async def websocket_endpoint(websocket: WebSocket, authorization: str = Header(N
         await asyncio.sleep(WS_PING_INTERVAL)   # Initial grace period
         while True:
             try:
+                ping_sent_at = time.monotonic()
                 await websocket.send_json({"type": "ping"})
                 logger.debug("Sent ping to %s", worker_id)
+                last_ping_time = ping_sent_at
                 await asyncio.sleep(WS_PONG_TIMEOUT)
-                elapsed = time.monotonic() - last_pong
-                if elapsed > WS_PING_INTERVAL + WS_PONG_TIMEOUT:
+
+                # If last_pong is older than when we sent the ping, no pong arrived.
+                if last_pong < last_ping_time:
                     logger.warning(
-                        "No pong from %s in %.0fs — closing stale connection.",
-                        worker_id, elapsed
+                        "No pong from %s — %.0fs since last pong — closing stale connection.",
+                        worker_id, time.monotonic() - last_pong
                     )
                     await websocket.close(code=1001)
                     return
+
                 await asyncio.sleep(WS_PING_INTERVAL - WS_PONG_TIMEOUT)
             except Exception:
                 return  # Connection already gone
