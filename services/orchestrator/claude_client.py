@@ -1,8 +1,8 @@
 """
-Atlas — Claude Haiku 3 Client
--------------------------------
-Single LLM provider. No routing. No fallbacks. Claude Haiku 3 for all tasks.
-Per AGENTS.md: Anthropic Claude Haiku 3 (claude-3-haiku-20240307) — sole LLM.
+Atlas — Claude Haiku 4.5 Client
+--------------------------------
+Single LLM provider. No routing. No fallbacks. Claude Haiku 4.5 for all tasks.
+Per AGENTS.md: Anthropic Claude Haiku 4.5 (claude-haiku-4-5-20251001) — sole LLM.
 
 Wraps the Anthropic async client with error handling and structured return types.
 """
@@ -51,16 +51,20 @@ class ClaudeClient:
         self.max_tokens = int(os.environ.get("CLAUDE_MAX_TOKENS", "3000"))
         self.temperature = float(os.environ.get("CLAUDE_TEMPERATURE", "0.6"))
 
-        # Time offset from WorldTimeAPI — synced async on first chat() call
+        # Time offset from WorldTimeAPI — synced lazily and refreshed every
+        # _TIME_RESYNC_SECONDS so long-running containers don't drift.
         self.time_offset_seconds: float = 0.0
-        self._time_synced: bool = False
+        self._time_synced_at: float = 0.0  # monotonic seconds; 0 = never
 
         logger.info("ClaudeClient initialized. Model: %s", self.model)
+
+    _TIME_RESYNC_SECONDS = 6 * 60 * 60  # re-sync every 6h
 
     async def _sync_time_offset_async(self) -> None:
         """
         Async fetch of true UTC time from WorldTimeAPI to bypass drifting VPS clocks.
-        Called once lazily on the first chat() call so it never blocks __init__.
+        Called lazily on first use and re-fired if more than _TIME_RESYNC_SECONDS
+        have elapsed since the last successful sync.
         """
         import time
         import httpx
@@ -82,7 +86,14 @@ class ClaudeClient:
         except Exception as e:
             logger.warning("Failed to sync true time. Falling back to system clock: %s", e)
         finally:
-            self._time_synced = True
+            # Update the timestamp even on failure so we don't hammer the API every call
+            self._time_synced_at = time.monotonic()
+
+    def _needs_time_resync(self) -> bool:
+        import time
+        if self._time_synced_at == 0.0:
+            return True
+        return (time.monotonic() - self._time_synced_at) >= self._TIME_RESYNC_SECONDS
 
     async def chat(
         self,
@@ -113,7 +124,7 @@ class ClaudeClient:
         from datetime import datetime, timezone, timedelta
 
         # Sync time on first call (non-blocking — was blocking in __init__ previously)
-        if not self._time_synced:
+        if self._needs_time_resync():
             await self._sync_time_offset_async()
 
         # Get true UTC timestamp by applying the offset
@@ -195,7 +206,7 @@ class ClaudeClient:
         import time
         from datetime import datetime, timezone, timedelta
 
-        if not self._time_synced:
+        if self._needs_time_resync():
             await self._sync_time_offset_async()
 
         true_utc_timestamp = time.time() + self.time_offset_seconds

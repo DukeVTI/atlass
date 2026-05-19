@@ -32,6 +32,13 @@ from tools.paystack import PaystackBalanceTool, PaystackCustomerTool, PaystackTr
 from tools.local_file import LocalFileTool
 from tools.mobile import MobileTool
 from tools.whatsapp import WhatsAppReadTool, WhatsAppSendTool, WhatsAppContactSearchTool
+from tools.reminders import (
+    SetReminderTool,
+    ListRemindersTool,
+    CancelReminderTool,
+    SnoozeReminderTool,
+    fetch_and_advance_due,
+)
 
 # Register all tools
 registry.register(WebSearchTool())
@@ -49,6 +56,10 @@ registry.register(MobileTool())
 registry.register(WhatsAppReadTool())
 registry.register(WhatsAppSendTool())
 registry.register(WhatsAppContactSearchTool())
+registry.register(SetReminderTool())
+registry.register(ListRemindersTool())
+registry.register(CancelReminderTool())
+registry.register(SnoozeReminderTool())
 
 load_dotenv()
 
@@ -161,7 +172,7 @@ async def chat(request: ChatRequest):
     # Retrieve persistent history and summary
     await append_turn(user_id, "user", message)
     history = await load_history(user_id)
-    prior_summary = await load_summary(user_id)
+    prior_summary = await load_summary(user_id, query=message)
 
     async def event_generator():
         try:
@@ -310,3 +321,17 @@ async def get_alert_calendar() -> dict:
     except Exception as e:
         logger.error("Failed to fetch calendar for alert endpoint: %s", e)
         return {"events": []}
+
+
+@app.get("/alerts/reminders", tags=["alerts"])
+async def get_alert_reminders() -> dict:
+    """
+    Drain due reminders. Atomically advances recurring ones / marks one-shots
+    fired. Bot polls this every minute and delivers the payload to Telegram.
+    """
+    try:
+        due = await fetch_and_advance_due()
+        return {"reminders": due}
+    except Exception as e:
+        logger.error("Failed to drain reminders: %s", e)
+        return {"reminders": []}

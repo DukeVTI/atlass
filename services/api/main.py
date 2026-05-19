@@ -96,9 +96,27 @@ async def lifespan(app: FastAPI):
             );
         """)
         await conn.execute("CREATE INDEX IF NOT EXISTS idx_conv_turns_user_created ON conversation_turns (user_id, created_at DESC);")
-        
+
+        # Reminders — drives the proactive "remind me to X at Y" loop.
+        # repeat: NULL = one-shot, otherwise one of daily|weekdays|weekly|monthly|yearly
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS reminders (
+                id          BIGSERIAL PRIMARY KEY,
+                user_id     BIGINT NOT NULL,
+                body        TEXT NOT NULL,
+                due_at      TIMESTAMPTZ NOT NULL,
+                repeat      VARCHAR(16),
+                status      VARCHAR(16) NOT NULL DEFAULT 'pending'
+                              CHECK (status IN ('pending','fired','cancelled')),
+                fired_at    TIMESTAMPTZ,
+                created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            );
+        """)
+        await conn.execute("CREATE INDEX IF NOT EXISTS idx_reminders_due ON reminders (status, due_at);")
+        await conn.execute("CREATE INDEX IF NOT EXISTS idx_reminders_user ON reminders (user_id, status, due_at);")
+
         await conn.close()
-        logger.info("Database tables initialized (audit_logs, whatsapp_messages, contacts, conversation_turns).")
+        logger.info("Database tables initialized (audit_logs, whatsapp_messages, contacts, conversation_turns, reminders).")
     except Exception as e:
         logger.error(f"Failed to initialize Audit Log table: {e}")
         
@@ -191,11 +209,11 @@ async def paystack_webhook(request: Request, x_paystack_signature: str = Header(
 
     body = await request.body()
     
-    # Generate signature using HMAC SHA512
+    # Generate signature using HMAC SHA512 and compare in constant time
     hash_obj = hmac.new(secret, body, hashlib.sha512).hexdigest()
 
-    if not x_paystack_signature or hash_obj != x_paystack_signature:
-        logger.warning(f"Webhook signature mismatch! Incoming: {x_paystack_signature} vs Calculated: {hash_obj}")
+    if not x_paystack_signature or not hmac.compare_digest(hash_obj, x_paystack_signature):
+        logger.warning("Webhook signature mismatch (incoming header rejected).")
         raise HTTPException(status_code=400, detail="Invalid signature")
 
     payload = await request.json()
@@ -282,7 +300,7 @@ async def log_audit(request: Request):
     """
     auth_header = request.headers.get("Authorization", "")
     expected_token = os.getenv("WORKER_TOKEN", "")
-    if not expected_token or auth_header != f"Bearer {expected_token}":
+    if not expected_token or not hmac.compare_digest(auth_header, f"Bearer {expected_token}"):
         raise HTTPException(status_code=403, detail="Forbidden")
 
     payload = await request.json()

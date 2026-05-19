@@ -68,7 +68,7 @@ class CalendarReadTool(Tool):
 class CalendarCreateTool(Tool):
     name = "create_event"
     description = "Creates a new event on Google Calendar. Automatically checks for double booking."
-    is_destructive = False # Low risk, but can optionally be Medium if desired. Kept low to align with PRD.
+    is_destructive = True  # Creates a real event + sends invites; gate it.
 
     schema = {
         "name": "create_event",

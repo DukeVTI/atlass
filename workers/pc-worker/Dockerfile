@@ -10,13 +10,13 @@ RUN apt-get update && apt-get install -y \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY main.py .
+COPY worker.py local_tools.py ./
 
 # Create the scoped root directory
 RUN mkdir -p /root/Documents/Atlas
 
 ENV SCOPED_ROOT=/root/Documents/Atlas
-ENV API_BASE_URL=http://api:8000
+ENV ATLAS_VPS_URL=ws://api:8000
 ENV LOG_LEVEL=INFO
 
-CMD ["python", "main.py"]
+CMD ["python", "worker.py"]

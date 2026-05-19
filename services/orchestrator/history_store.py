@@ -76,32 +76,47 @@ async def append_turn(user_id: int, role: str, content: str) -> None:
     await _maybe_summarise(user_id, pool)
 
 
-async def load_summary(user_id: int) -> Optional[str]:
+async def load_summary(user_id: int, query: Optional[str] = None) -> Optional[str]:
     """
-    Retrieve the latest semantic summary for user_id from ChromaDB.
-    Returns None if no summary exists yet.
+    Retrieve the most relevant semantic summary for user_id from ChromaDB.
+
+    If `query` is provided, the embedding of the live user query drives the
+    similarity search (real semantic recall). If it's None or empty, we fall
+    back to a deterministic GET by document id — which is what we want when
+    only one summary doc per user exists (the upsert path uses a stable id).
     """
+    user_id_str = str(user_id)
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
-            # 1. Get the collection ID first
             coll_resp = await client.get(f"{CHROMA_URL}/api/v1/collections/conversation_summaries")
             if coll_resp.status_code != 200:
                 return None
             coll_id = coll_resp.json().get("id")
-            
-            # 2. Query using the ID
+
+            # Path A: semantic query against the user's stored summary(ies)
+            if query and query.strip():
+                resp = await client.post(
+                    f"{CHROMA_URL}/api/v1/collections/{coll_id}/query",
+                    json={
+                        "query_texts": [query.strip()[:1000]],
+                        "n_results": 1,
+                        "where": {"user_id": user_id_str},
+                    },
+                )
+                if resp.status_code == 200:
+                    docs = resp.json().get("documents", [[]])[0]
+                    if docs:
+                        return docs[0]
+
+            # Path B: deterministic fetch by stable doc id
+            doc_id = f"summary_user_{user_id}"
             resp = await client.post(
-                f"{CHROMA_URL}/api/v1/collections/{coll_id}/query",
-                json={
-                    "query_texts": [f"user_{user_id}_summary"],
-                    "n_results": 1,
-                    "where": {"user_id": str(user_id)},
-                }
+                f"{CHROMA_URL}/api/v1/collections/{coll_id}/get",
+                json={"ids": [doc_id]},
             )
             if resp.status_code != 200:
                 return None
-            data = resp.json()
-            docs = data.get("documents", [[]])[0]
+            docs = resp.json().get("documents", [])
             return docs[0] if docs else None
     except Exception as exc:
         logger.warning("Could not fetch summary from ChromaDB: %s", exc)
@@ -213,14 +228,9 @@ async def _upsert_summary_in_chroma(user_id: int, summary: str) -> None:
                 return
             coll_id = coll_resp.json().get("id")
 
-            # Delete existing summary for this user if present
+            # Atomic upsert by stable doc id — avoids the delete/insert race
             await client.post(
-                f"{CHROMA_URL}/api/v1/collections/{coll_id}/delete",
-                json={"ids": [doc_id]}
-            )
-            # Insert fresh summary
-            await client.post(
-                f"{CHROMA_URL}/api/v1/collections/{coll_id}/add",
+                f"{CHROMA_URL}/api/v1/collections/{coll_id}/upsert",
                 json={
                     "ids": [doc_id],
                     "documents": [summary],

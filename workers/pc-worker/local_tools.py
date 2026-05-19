@@ -4,8 +4,60 @@ import psutil
 import base64
 import shutil
 
+# Allowlist approach (preferred over blocklist): only commands whose first
+# token is on this list can run. Extend deliberately — never replace with a
+# blocklist, since a blocklist can always be bypassed with a renamed binary
+# or a `bash -c "..."` wrapper.
+ALLOWED_COMMANDS = {
+    # Inspection / read-only
+    "ls", "dir", "echo", "cat", "head", "tail", "grep", "find", "wc",
+    "pwd", "whoami", "uname", "uptime", "free", "df", "du", "hostname",
+    # Dev toolchain
+    "python", "python3", "pip", "pip3",
+    "node", "npm", "npx",
+    "git",
+    # Network / fetch
+    "curl", "wget",
+    # File mutation (still vetted by the dangerous-pattern check below)
+    "cp", "mv", "mkdir", "touch", "rm",
+}
+
+# Patterns that indicate path traversal, privilege escalation, or
+# shell metacharacter abuse. Checked case-insensitively.
+_DANGEROUS_PATTERNS = (
+    "..", "/etc/", "/root/", "/proc/", "/sys/", "/dev/",
+    "~/.ssh", "~/.aws", "~/.env",
+    "sudo", "su ", "chmod 777", "chown root",
+    "; rm", "&& rm", "| rm",
+    "> /dev/", ">> /dev/",
+    "`", "$(", "${",
+    "\n", "\r",
+)
+
+
+def _is_safe_command(command: str) -> tuple[bool, str]:
+    """Return (is_safe, reason). Run BEFORE invoking subprocess."""
+    if not command or not command.strip():
+        return False, "empty command"
+    if len(command) > 4000:
+        return False, "command too long"
+
+    first_token = command.strip().split()[0].lstrip("./").lower()
+    if first_token not in ALLOWED_COMMANDS:
+        return False, f"command '{first_token}' not on allowlist"
+
+    haystack = command.lower()
+    for needle in _DANGEROUS_PATTERNS:
+        if needle in haystack:
+            return False, f"blocked pattern: {needle!r}"
+    return True, ""
+
+
 def run_shell(command: str) -> str:
-    """Executes a shell command and returns the output."""
+    """Executes a vetted shell command and returns the output."""
+    safe, reason = _is_safe_command(command)
+    if not safe:
+        return f"Error: refused unsafe command ({reason})."
     try:
         result = subprocess.run(
             command, shell=True, capture_output=True, text=True, timeout=30

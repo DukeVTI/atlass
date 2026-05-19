@@ -250,7 +250,13 @@ class ButlerLoop:
 
             # ΓöÇΓöÇ Case 2: Claude wants to call tools ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
             tool_calls = response["tool_calls"]
-            tool_signature = sorted(t.name for t in tool_calls)
+            # Signature keys on name+inputs so identical *calls* trigger the
+            # breaker, not just identical *tool names*. Same web_search with
+            # two different queries no longer collapses into a fake loop.
+            tool_signature = sorted(
+                f"{t.name}:{json.dumps(t.input, sort_keys=True, default=str)}"
+                for t in tool_calls
+            )
 
             # Circuit breaker ΓÇö same tools called repeatedly?
             if tool_signature == last_tool_signature:

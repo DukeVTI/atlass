@@ -40,6 +40,7 @@ from alerts import (
     check_email_alerts,
     check_meeting_reminders,
     check_worker_health,
+    check_reminders,
 )
 
 load_dotenv()
@@ -127,8 +128,9 @@ def main() -> None:
     app.job_queue.run_repeating(check_redis_notifications,interval=30,   first=10,  name="alert_redis")
     app.job_queue.run_repeating(check_email_alerts,     interval=300,  first=60,  name="alert_email")
     app.job_queue.run_repeating(check_meeting_reminders,interval=60,   first=30,  name="alert_meeting")
+    app.job_queue.run_repeating(check_reminders,        interval=60,   first=20,  name="alert_reminders")
     app.job_queue.run_repeating(check_worker_health,    interval=600,  first=120, name="alert_worker")
-    logger.info("Proactive alert loops registered (redis:30s / email:5m / meeting:1m / worker:10m).")
+    logger.info("Proactive alert loops registered (redis:30s / email:5m / meeting:1m / reminders:1m / worker:10m).")
 
     logger.info("All handlers registered. Starting long-poll loop.")
 

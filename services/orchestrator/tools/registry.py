@@ -187,3 +187,25 @@ registry.register(RejectActionTool())
 # ─── Register Android Mobile Worker Tools ───
 from .mobile import MobileTool
 registry.register(MobileTool())
+
+# ─── Register PC Worker Tools (split, fine-grained) ───
+from .pc_worker import (
+    PCRunShellTool,
+    PCReadFileTool,
+    PCWriteFileTool,
+    PCDeleteFileTool,
+    PCListDirectoryTool,
+    PCSystemStatusTool,
+    PCTakeScreenshotTool,
+)
+
+for _pc_tool_cls in (
+    PCRunShellTool,
+    PCReadFileTool,
+    PCWriteFileTool,
+    PCDeleteFileTool,
+    PCListDirectoryTool,
+    PCSystemStatusTool,
+    PCTakeScreenshotTool,
+):
+    registry.register(_pc_tool_cls())

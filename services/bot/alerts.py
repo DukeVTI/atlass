@@ -51,19 +51,25 @@ def _safe(text: str) -> str:
 _vip_emails = set(e.strip().lower() for e in os.environ.get("ALERT_VIP_EMAILS", "").split(",") if e.strip())
 _vip_domains = set(d.strip().lower() for d in os.environ.get("ALERT_VIP_DOMAINS", "paystack.com").split(",") if d.strip())
 
-# In-process deduplication sets (reset on restart)
-# Capped at MAX_DEDUP_SIZE to prevent unbounded memory growth over long uptime
-_alerted_email_ids: set[str] = set()
-_alerted_meeting_ids: set[str] = set()
-_worker_offline_alerted: bool = False
-MAX_DEDUP_SIZE = 500
+# Redis-backed deduplication so bot restarts don't re-alert the same item.
+# Different namespaces + TTLs per alert type.
+_EMAIL_DEDUP_KEY = "atlas:alert:dedup:email"      # TTL 24h per id
+_MEETING_DEDUP_KEY = "atlas:alert:dedup:meeting"  # TTL  3h per (event_id,window)
+_EMAIL_DEDUP_TTL = 24 * 60 * 60
+_MEETING_DEDUP_TTL = 3 * 60 * 60
+
+_worker_offline_alerted: bool = False  # transient, OK to lose on restart
 
 
-def _dedup_add(s: set, value: str) -> None:
-    """Add value to set; clear the set if it exceeds MAX_DEDUP_SIZE."""
-    if len(s) >= MAX_DEDUP_SIZE:
-        s.clear()
-    s.add(value)
+async def _already_alerted(redis_client, namespace: str, item_id: str) -> bool:
+    """Returns True if this id is already in the dedup set (and refreshes TTL)."""
+    key = f"{namespace}:{item_id}"
+    return bool(await redis_client.exists(key))
+
+
+async def _mark_alerted(redis_client, namespace: str, item_id: str, ttl: int) -> None:
+    key = f"{namespace}:{item_id}"
+    await redis_client.set(key, "1", ex=ttl)
 
 # ─── Urgency Scoring Algorithm ────────────────────────────────────────────────
 
@@ -218,7 +224,7 @@ async def check_email_alerts(context: ContextTypes.DEFAULT_TYPE) -> None:
     Polls orchestrator for recent unread emails, scores them algorithmically,
     and alerts if score >= URGENT_EMAIL_THRESHOLD. Zero LLM calls.
     """
-    global _alerted_email_ids
+    import redis.asyncio as aioredis
     try:
         async with httpx.AsyncClient(timeout=20.0) as client:
             resp = await client.get(f"{ORCHESTRATOR_URL}/alerts/emails")
@@ -227,38 +233,44 @@ async def check_email_alerts(context: ContextTypes.DEFAULT_TYPE) -> None:
                 return
             emails = resp.json().get("emails", [])
 
-        for email in emails:
-            email_id = email.get("id")
-            if not email_id or email_id in _alerted_email_ids:
-                continue
+        r = aioredis.from_url(REDIS_URL, decode_responses=True)
+        try:
+            for email in emails:
+                email_id = email.get("id")
+                if not email_id:
+                    continue
+                if await _already_alerted(r, _EMAIL_DEDUP_KEY, email_id):
+                    continue
 
-            score = _score_email(
-                email_id=email_id,
-                sender=email.get("sender", ""),
-                subject=email.get("subject", ""),
-                snippet=email.get("snippet", ""),
-                date_ms=email.get("date_ms", 0),
-            )
-
-            logger.debug("Email %s scored %d (threshold %d)", email_id[:8], score, URGENT_EMAIL_THRESHOLD)
-
-            if score >= URGENT_EMAIL_THRESHOLD:
-                flag = "🚨 Heads up, looks urgent" if score >= 80 else "📧 Something worth your attention"
-                text = (
-                    f"{flag} —\n"
-                    f"From {_safe(email.get('sender', 'Unknown'))}\n"
-                    f"\"{_safe(email.get('subject', 'No Subject'))}\""
-                    + (f"\n\n{_safe(email.get('snippet', '')[:200])}" if email.get('snippet') else "")
-                    + "\n\nWant me to pull it up?"
+                score = _score_email(
+                    email_id=email_id,
+                    sender=email.get("sender", ""),
+                    subject=email.get("subject", ""),
+                    snippet=email.get("snippet", ""),
+                    date_ms=email.get("date_ms", 0),
                 )
-                for user_id in ALLOWED_IDS:
-                    await context.bot.send_message(
-                        chat_id=user_id,
-                        text=text,
-                        parse_mode=ParseMode.MARKDOWN,
+
+                logger.debug("Email %s scored %d (threshold %d)", email_id[:8], score, URGENT_EMAIL_THRESHOLD)
+
+                if score >= URGENT_EMAIL_THRESHOLD:
+                    flag = "🚨 Heads up, looks urgent" if score >= 80 else "📧 Something worth your attention"
+                    text = (
+                        f"{flag} —\n"
+                        f"From {_safe(email.get('sender', 'Unknown'))}\n"
+                        f"\"{_safe(email.get('subject', 'No Subject'))}\""
+                        + (f"\n\n{_safe(email.get('snippet', '')[:200])}" if email.get('snippet') else "")
+                        + "\n\nWant me to pull it up?"
                     )
-                _dedup_add(_alerted_email_ids, email_id)
-                logger.info("Email alert sent for %s (score=%d)", email_id[:8], score)
+                    for user_id in ALLOWED_IDS:
+                        await context.bot.send_message(
+                            chat_id=user_id,
+                            text=text,
+                            parse_mode=ParseMode.MARKDOWN,
+                        )
+                    await _mark_alerted(r, _EMAIL_DEDUP_KEY, email_id, _EMAIL_DEDUP_TTL)
+                    logger.info("Email alert sent for %s (score=%d)", email_id[:8], score)
+        finally:
+            await r.aclose()
 
     except Exception as e:
         logger.error("Email alert check failed: %s", e)
@@ -271,7 +283,7 @@ async def check_meeting_reminders(context: ContextTypes.DEFAULT_TYPE) -> None:
     Checks upcoming calendar events every minute.
     Fires a Telegram reminder at 15 min and 5 min before each event.
     """
-    global _alerted_meeting_ids
+    import redis.asyncio as aioredis
     try:
         async with httpx.AsyncClient(timeout=15.0) as client:
             resp = await client.get(f"{ORCHESTRATOR_URL}/alerts/calendar")
@@ -281,50 +293,97 @@ async def check_meeting_reminders(context: ContextTypes.DEFAULT_TYPE) -> None:
 
         now = datetime.now(timezone.utc)
 
-        for event in events:
-            event_id = event.get("id")
-            start_str = event.get("start")
-            summary = event.get("summary", "Untitled Event")
-            location = event.get("location", "")
+        r = aioredis.from_url(REDIS_URL, decode_responses=True)
+        try:
+            for event in events:
+                event_id = event.get("id")
+                start_str = event.get("start")
+                summary = event.get("summary", "Untitled Event")
+                location = event.get("location", "")
 
-            if not event_id or not start_str:
-                continue
-
-            try:
-                start_dt = datetime.fromisoformat(start_str.replace("Z", "+00:00"))
-            except ValueError:
-                continue
-
-            minutes_until = (start_dt - now).total_seconds() / 60
-
-            for window, label in [(15, "15 minutes"), (5, "5 minutes")]:
-                key = f"{event_id}_{window}"
-                if key in _alerted_meeting_ids:
+                if not event_id or not start_str:
                     continue
-                if abs(minutes_until - window) <= 0.6:  # within 36 seconds of the window
-                    safe_summary = _safe(summary)
-                    safe_location = _safe(location) if location else ""
-                    if window == 15:
-                        text = (
-                            f"⏰ Just a heads up — *{safe_summary}* is in 15 minutes."
-                            + (f" ({safe_location})" if safe_location else "")
-                        )
-                    else:
-                        text = (
-                            f"🔔 Last call — *{safe_summary}* starts in 5 minutes!"
-                            + (f" ({safe_location})" if safe_location else "")
-                        )
-                    for user_id in ALLOWED_IDS:
-                        await context.bot.send_message(
-                            chat_id=user_id,
-                            text=text,
-                            parse_mode=ParseMode.MARKDOWN,
-                        )
-                    _dedup_add(_alerted_meeting_ids, key)
-                    logger.info("Meeting reminder sent for '%s' (%s window)", summary, label)
+
+                try:
+                    start_dt = datetime.fromisoformat(start_str.replace("Z", "+00:00"))
+                except ValueError:
+                    continue
+
+                minutes_until = (start_dt - now).total_seconds() / 60
+
+                for window, label in [(15, "15 minutes"), (5, "5 minutes")]:
+                    key = f"{event_id}_{window}"
+                    if await _already_alerted(r, _MEETING_DEDUP_KEY, key):
+                        continue
+                    if abs(minutes_until - window) <= 0.6:  # within 36 seconds of the window
+                        safe_summary = _safe(summary)
+                        safe_location = _safe(location) if location else ""
+                        if window == 15:
+                            text = (
+                                f"⏰ Just a heads up — *{safe_summary}* is in 15 minutes."
+                                + (f" ({safe_location})" if safe_location else "")
+                            )
+                        else:
+                            text = (
+                                f"🔔 Last call — *{safe_summary}* starts in 5 minutes!"
+                                + (f" ({safe_location})" if safe_location else "")
+                            )
+                        for user_id in ALLOWED_IDS:
+                            await context.bot.send_message(
+                                chat_id=user_id,
+                                text=text,
+                                parse_mode=ParseMode.MARKDOWN,
+                            )
+                        await _mark_alerted(r, _MEETING_DEDUP_KEY, key, _MEETING_DEDUP_TTL)
+                        logger.info("Meeting reminder sent for '%s' (%s window)", summary, label)
+        finally:
+            await r.aclose()
 
     except Exception as e:
         logger.error("Meeting reminder check failed: %s", e)
+
+
+# ─── Alert: Reminders ─────────────────────────────────────────────────────────
+
+async def check_reminders(context: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    Polls the orchestrator's reminder drain endpoint and delivers any due
+    reminders to Telegram. The orchestrator already advanced / fired the
+    rows transactionally, so this is at-most-once delivery (acceptable
+    tradeoff for a personal butler — we'd rather miss one than spam Duke).
+    """
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(f"{ORCHESTRATOR_URL}/alerts/reminders")
+            if resp.status_code != 200:
+                return
+            due = resp.json().get("reminders", [])
+
+        for rem in due:
+            body = rem.get("body", "(no body)")
+            repeat = rem.get("repeat")
+            target_user_id = rem.get("user_id") or 0
+            tag = f" _(repeats {repeat})_" if repeat else ""
+            text = f"🔔 *Reminder* — {_safe(body)}{tag}"
+
+            # Deliver to the user who set it if known; otherwise broadcast to ALLOWED_IDS.
+            recipients = [target_user_id] if target_user_id else list(ALLOWED_IDS)
+            for uid in recipients:
+                if uid not in ALLOWED_IDS:
+                    # Defence-in-depth: never deliver to unknown user_ids.
+                    continue
+                try:
+                    await context.bot.send_message(
+                        chat_id=uid,
+                        text=text,
+                        parse_mode=ParseMode.MARKDOWN,
+                    )
+                except Exception as send_exc:
+                    logger.error("Failed to send reminder %s: %s", rem.get("id"), send_exc)
+            logger.info("Reminder #%s delivered: %s", rem.get("id"), body[:80])
+
+    except Exception as e:
+        logger.error("Reminder check failed: %s", e)
 
 
 # ─── Alert 4: PC Worker Offline ───────────────────────────────────────────────
