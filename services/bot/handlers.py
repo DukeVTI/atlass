@@ -197,11 +197,11 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     logger.info("User %d triggered /status.", update.effective_user.id)
     text = (
         "🟢 *Atlas is online*\n\n"
-        "▸ Layer: 3 — LLM Connected\n"
-        "▸ Model: Claude Haiku 3\n"
+        "▸ Model: Claude Haiku 4\\.5\n"
+        "▸ Memory: Persistent \\(Postgres \\+ ChromaDB\\)\n"
         "▸ Security gate: Active\n"
-        "▸ Memory: Working \\(in\\-process\\)\n"
-        "▸ Tools: Not yet connected \\(Layer 4\\)"
+        "▸ Tools: Gmail, Calendar, Paystack, WhatsApp, PC Worker, Mobile\n"
+        "▸ Alerts: Email, Calendar, Payments, Worker health"
     )
     await update.message.reply_text(text, parse_mode=ParseMode.MARKDOWN_V2)
 
@@ -295,10 +295,10 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     user = update.effective_user
     
     if data.startswith("approve_"):
-        conf_id = data.split("_")[1]
+        conf_id = data[len("approve_"):]
         action_msg = f"Approve action {conf_id}"
     elif data.startswith("reject_"):
-        conf_id = data.split("_")[1]
+        conf_id = data[len("reject_"):]
         action_msg = f"Reject action {conf_id}"
     else:
         return

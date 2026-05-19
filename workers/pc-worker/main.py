@@ -75,25 +75,81 @@ async def handle_file_list(params: dict) -> dict:
     except Exception as e:
         return {"error": str(e)}
 
+SCRIPT_TIMEOUT_SECONDS = 30
+
+# Allowed commands — extend this list deliberately, never use a blocklist
+ALLOWED_COMMANDS = {
+    "ls", "dir", "echo", "cat", "head", "tail", "grep", "find",
+    "python", "python3", "pip", "pip3",
+    "node", "npm",
+    "git",
+    "curl", "wget",
+    "df", "du", "free", "uptime", "whoami", "pwd",
+    "cp", "mv", "mkdir", "touch", "rm",
+}
+
+# Patterns that indicate path traversal or privilege escalation attempts
+_DANGEROUS_PATTERNS = [
+    "..", "/etc/", "/root/", "/proc/", "/sys/", "/dev/",
+    "~/.ssh", "~/.aws", "~/.env",
+    "sudo", "su ", "chmod 777", "chown root",
+    "; rm", "&& rm", "| rm",
+    "> /dev/", ">> /dev/",
+]
+
+
+def _is_safe_script(script: str) -> tuple[bool, str]:
+    """
+    Returns (safe, reason). Rejects scripts that:
+    1. Use a command not in the ALLOWED_COMMANDS allowlist
+    2. Contain dangerous path or privilege-escalation patterns
+    """
+    stripped = script.strip()
+    if not stripped:
+        return False, "Empty script."
+
+    # Extract the first token (the command being run)
+    first_token = stripped.split()[0].lstrip("./")
+    if first_token not in ALLOWED_COMMANDS:
+        return False, f"Command '{first_token}' is not on the allowlist."
+
+    lower = script.lower()
+    for pattern in _DANGEROUS_PATTERNS:
+        if pattern in lower:
+            return False, f"Dangerous pattern detected: '{pattern}'."
+
+    return True, ""
+
+
 async def handle_execute_script(params: dict) -> dict:
     script = params.get("script", "")
     if not script:
         return {"error": "No script provided"}
-    
+
+    safe, reason = _is_safe_script(script)
+    if not safe:
+        logger.warning("Blocked script execution: %s | Script: %r", reason, script[:200])
+        return {"error": f"Script rejected by safety filter: {reason}"}
+
     try:
-        # Run in a shell, restricted to scoped root
         process = await asyncio.create_subprocess_shell(
             script,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
-            cwd=SCOPED_ROOT
+            cwd=SCOPED_ROOT,
         )
-        stdout, stderr = await process.communicate()
-        
+        try:
+            stdout, stderr = await asyncio.wait_for(
+                process.communicate(), timeout=SCRIPT_TIMEOUT_SECONDS
+            )
+        except asyncio.TimeoutError:
+            process.kill()
+            return {"error": f"Script timed out after {SCRIPT_TIMEOUT_SECONDS}s."}
+
         return {
             "exit_code": process.returncode,
-            "stdout": stdout.decode().strip(),
-            "stderr": stderr.decode().strip()
+            "stdout": stdout.decode(errors="replace").strip(),
+            "stderr": stderr.decode(errors="replace").strip(),
         }
     except Exception as e:
         return {"error": str(e)}

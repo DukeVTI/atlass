@@ -37,69 +37,61 @@ def _trim_messages_to_budget(
     budget: int = INPUT_TOKEN_BUDGET,
 ) -> list[dict]:
     """
-    Trim the oldest messages from the history until we're under budget.
-    We trim by 'turns' (User + Assistant [+ Tool Sequence]) to ensure
-    we never leave orphaned tool results at the top of the history.
+    Trim the oldest turns from the history until estimated token usage is under budget.
+    Trims by complete turns (User + Assistant [+ Tool Sequence]) to avoid leaving
+    orphaned tool results at the top of the history.
+
+    Uses a crude per-message token estimate (chars / 4) to avoid extra API calls.
+    The real count_tokens call happens before each butler iteration — this just
+    gets us roughly under budget in one pass.
     """
     if current_token_count <= budget or len(messages) <= 2:
         return messages
 
-    # Helper: Check if a user message is a fresh turn (no tool results)
     def is_fresh_user_message(msg: dict) -> bool:
+        """True if this is a plain user turn (not a tool_result return)."""
         if msg.get("role") != "user":
             return False
         content = msg.get("content")
         if not isinstance(content, list):
-            return True # Plain text is fresh
-        return not any(isinstance(c, dict) and c.get("type") == "tool_result" for c in content)
+            return True
+        return not any(
+            isinstance(c, dict) and c.get("type") == "tool_result" for c in content
+        )
 
-    # Work from the front to find safe split points (fresh user turns)
+    # Indices where a clean cut can be made (start of a fresh user turn)
     safe_indices = [i for i, m in enumerate(messages) if is_fresh_user_message(m)]
-    
-    # We always need at least one safe index (the current one)
+
     if not safe_indices:
-        return messages[-1:] # Extreme fallback: just the last message
+        # Extreme fallback: keep only the last message
+        return messages[-1:]
 
-    trimmed = list(messages)
-    # Estimate token weight per message (crude but effective)
-    # We'll just remove turns from the front until the token count drops.
-    # Note: Anthropic's token counting API is accurate, but since we are
-    # already over, we just shed until we have a reasonable amount left.
-    
-    # We want to keep at least the last 2 messages (Current user turn)
-    # So we only consider safe indices that leave at least 2 messages.
-    valid_safe_indices = [idx for idx in safe_indices if idx < len(messages) - 1]
-    
-    # Try to shed as much as needed by jumping to the next safe index
-    current_idx_pointer = 0
-    while current_idx_pointer < len(valid_safe_indices) - 1:
-        # Check if we still need to shed. We don't have the updated token count
-        # without calling the API again, so we'll just shed one turn at a time
-        # if we started over budget. 
-        # A conservative approach: If we're over, shed at least the oldest turn.
-        
-        # Move to the next safe user turn
-        next_safe_idx = valid_safe_indices[current_idx_pointer + 1]
-        
-        # Potential messages to remove: everything before next_safe_idx
-        # But we only do this if we are still far enough from the end.
-        if next_safe_idx >= len(messages) - 1:
+    # Only consider cut points that leave at least the final user turn intact
+    valid_cuts = [idx for idx in safe_indices if idx < len(messages) - 1]
+
+    if not valid_cuts:
+        return messages
+
+    trimmed = messages
+    estimated_tokens = current_token_count
+
+    for cut_idx in valid_cuts:
+        if estimated_tokens <= budget:
             break
-            
-        trimmed = messages[next_safe_idx:]
-        
-        # In a real scenario, we'd re-verify token count here.
-        # For now, we shed the oldest turn and log it.
-        logger.info("Shedding oldest conversation turn to respect token budget.")
-        break # Shed one turn and exit loop (will re-check on next butler iteration)
-
-    return trimmed
+        shed = trimmed[:cut_idx]
+        shed_chars = sum(
+            len(str(m.get("content", ""))) for m in shed
+        )
+        estimated_tokens -= shed_chars // 4
+        trimmed = messages[cut_idx:]
+        logger.info(
+            "Shed %d message(s) from history. Estimated tokens now ~%d (budget: %d).",
+            cut_idx, estimated_tokens, budget,
+        )
 
     logger.info(
-        "Trimmed message history: %d→%d messages to stay under %dk token budget.",
-        len(messages),
-        len(trimmed),
-        budget // 1000,
+        "Trimmed message history: %d → %d messages to stay under %dk token budget.",
+        len(messages), len(trimmed), budget // 1000,
     )
     return trimmed
 
@@ -178,28 +170,19 @@ class ButlerLoop:
         memory_context = await self._get_memory_context(
             user_id, session_id, first_user_message or ""
         )
-        
-        # Inject memory context as a system message after the primary system prompt
-        if memory_context or prior_summary:
-            full_context = ""
+
+        # Build memory/summary addendum for the system prompt (not a fake user turn)
+        self._ephemeral_system_addendum = ""
+        if prior_summary or memory_context:
+            parts = []
             if prior_summary:
-                full_context += (
+                parts.append(
                     f"PRIOR CONVERSATION CONTEXT (summarised):\n{prior_summary}\n"
-                    f"---\n"
-                    f"The messages below are the most recent continuation of this conversation.\n\n"
+                    f"The messages below are the most recent continuation of this conversation."
                 )
             if memory_context:
-                full_context += f"{memory_context}\n"
-            
-            context_msg = {
-                "role": "user",
-                "content": f"{full_context}[Please use the above context to inform your response.]"
-            }
-            # Insert after system message (index 0) but before conversation history
-            if len(current_messages) > 0:
-                current_messages.insert(1, context_msg)
-            else:
-                current_messages.append(context_msg)
+                parts.append(memory_context)
+            self._ephemeral_system_addendum = "\n\n---\n" + "\n\n".join(parts)
         
         iteration = 0
         turn_number = 0
@@ -236,6 +219,7 @@ class ButlerLoop:
             response = await self.claude.chat(
                 messages=current_messages,
                 tools=tools,
+                system_addendum=getattr(self, "_ephemeral_system_addendum", ""),
             )
 
             # ΓöÇΓöÇ Case 1: clean text response ΓÇö done ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
@@ -385,7 +369,10 @@ class ButlerLoop:
                 synthesis_messages = _trim_messages_to_budget(
                     synthesis_messages, synth_token_count
                 )
-            final = await self.claude.chat(messages=synthesis_messages)
+            final = await self.claude.chat(
+                messages=synthesis_messages,
+                system_addendum=getattr(self, "_ephemeral_system_addendum", ""),
+            )
             final_response = final["content"]
             
             for cid in pending_confirmations:

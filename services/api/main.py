@@ -277,7 +277,14 @@ async def whatsapp_webhook(request: Request):
 async def log_audit(request: Request):
     """
     Internal endpoint to record every tool call Atlas makes.
+    Only accepts requests carrying the WORKER_TOKEN as a bearer token —
+    prevents external callers from injecting fake audit records.
     """
+    auth_header = request.headers.get("Authorization", "")
+    expected_token = os.getenv("WORKER_TOKEN", "")
+    if not expected_token or auth_header != f"Bearer {expected_token}":
+        raise HTTPException(status_code=403, detail="Forbidden")
+
     payload = await request.json()
     
     try:
