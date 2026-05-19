@@ -1,6 +1,11 @@
 # ─── Secrets (never commit these) ────────────────────────────────────────────
+# Catch all env variants (real configs + backups), then explicitly UN-ignore
+# the templates that are meant to be tracked.
 .env
+.env.*
 *.env.local
+!.env.example
+!.env.template
 config/credentials.json
 config/token.json
 groq_keys.txt
