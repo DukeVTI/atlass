@@ -52,9 +52,18 @@ _vip_emails = set(e.strip().lower() for e in os.environ.get("ALERT_VIP_EMAILS", 
 _vip_domains = set(d.strip().lower() for d in os.environ.get("ALERT_VIP_DOMAINS", "paystack.com").split(",") if d.strip())
 
 # In-process deduplication sets (reset on restart)
+# Capped at MAX_DEDUP_SIZE to prevent unbounded memory growth over long uptime
 _alerted_email_ids: set[str] = set()
 _alerted_meeting_ids: set[str] = set()
 _worker_offline_alerted: bool = False
+MAX_DEDUP_SIZE = 500
+
+
+def _dedup_add(s: set, value: str) -> None:
+    """Add value to set; clear the set if it exceeds MAX_DEDUP_SIZE."""
+    if len(s) >= MAX_DEDUP_SIZE:
+        s.clear()
+    s.add(value)
 
 # ─── Urgency Scoring Algorithm ────────────────────────────────────────────────
 
@@ -248,7 +257,7 @@ async def check_email_alerts(context: ContextTypes.DEFAULT_TYPE) -> None:
                         text=text,
                         parse_mode=ParseMode.MARKDOWN,
                     )
-                _alerted_email_ids.add(email_id)
+                _dedup_add(_alerted_email_ids, email_id)
                 logger.info("Email alert sent for %s (score=%d)", email_id[:8], score)
 
     except Exception as e:
@@ -311,7 +320,7 @@ async def check_meeting_reminders(context: ContextTypes.DEFAULT_TYPE) -> None:
                             text=text,
                             parse_mode=ParseMode.MARKDOWN,
                         )
-                    _alerted_meeting_ids.add(key)
+                    _dedup_add(_alerted_meeting_ids, key)
                     logger.info("Meeting reminder sent for '%s' (%s window)", summary, label)
 
     except Exception as e:

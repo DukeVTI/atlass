@@ -48,38 +48,47 @@ class ClaudeClient:
 
         self.client = AsyncAnthropic(api_key=api_key)
         self.model = os.environ.get("ANTHROPIC_MODEL", "claude-haiku-4-5-20251001").strip()
-        self.max_tokens = int(os.environ.get("CLAUDE_MAX_TOKENS", "700"))
+        self.max_tokens = int(os.environ.get("CLAUDE_MAX_TOKENS", "3000"))
         self.temperature = float(os.environ.get("CLAUDE_TEMPERATURE", "0.6"))
 
-        # Calculate time offset from worldtimeapi to bypass broken VPS clocks
-        self.time_offset_seconds = 0
-        self._sync_time_offset()
+        # Time offset from WorldTimeAPI — synced async on first chat() call
+        self.time_offset_seconds: float = 0.0
+        self._time_synced: bool = False
 
         logger.info("ClaudeClient initialized. Model: %s", self.model)
 
-    def _sync_time_offset(self):
-        """Fetches true UTC time to calculate offset and bypass drifting VPS clocks."""
-        import urllib.request
-        import json
+    async def _sync_time_offset_async(self) -> None:
+        """
+        Async fetch of true UTC time from WorldTimeAPI to bypass drifting VPS clocks.
+        Called once lazily on the first chat() call so it never blocks __init__.
+        """
         import time
+        import httpx
+        import json as _json
         try:
-            req = urllib.request.Request(
-                "http://worldtimeapi.org/api/timezone/Africa/Lagos", 
-                headers={'User-Agent': 'Atlas-Butler-AI'}
-            )
-            with urllib.request.urlopen(req, timeout=5) as response:
-                data = json.loads(response.read().decode('utf-8'))
+            async with httpx.AsyncClient(timeout=5.0) as http:
+                resp = await http.get(
+                    "http://worldtimeapi.org/api/timezone/Africa/Lagos",
+                    headers={"User-Agent": "Atlas-Butler-AI"},
+                )
+                data = _json.loads(resp.content)
                 true_unixtime = data.get("unixtime")
                 if true_unixtime:
                     self.time_offset_seconds = true_unixtime - time.time()
-                    logger.info("Time offset synced from WorldTimeAPI: %s seconds", self.time_offset_seconds)
+                    logger.info(
+                        "Time offset synced from WorldTimeAPI: %.2f seconds",
+                        self.time_offset_seconds,
+                    )
         except Exception as e:
             logger.warning("Failed to sync true time. Falling back to system clock: %s", e)
+        finally:
+            self._time_synced = True
 
     async def chat(
         self,
         messages: list[dict],
         tools: list[dict] | None = None,
+        system_addendum: str = "",
     ) -> dict:
         """
         Send a message to Claude and return a structured response dict.
@@ -103,9 +112,13 @@ class ClaudeClient:
         import time
         from datetime import datetime, timezone, timedelta
 
+        # Sync time on first call (non-blocking — was blocking in __init__ previously)
+        if not self._time_synced:
+            await self._sync_time_offset_async()
+
         # Get true UTC timestamp by applying the offset
         true_utc_timestamp = time.time() + self.time_offset_seconds
-        
+
         # Lagos (WAT) is strictly UTC+1 all year round.
         wat_tz = timezone(timedelta(hours=1), name="WAT")
         now = datetime.fromtimestamp(true_utc_timestamp, tz=timezone.utc).astimezone(wat_tz)
@@ -119,6 +132,8 @@ class ClaudeClient:
         )
         
         dynamic_system_prompt = SYSTEM_PROMPT + time_context
+        if system_addendum:
+            dynamic_system_prompt += system_addendum
 
         kwargs: dict = {
             "model": self.model,
@@ -179,6 +194,9 @@ class ClaudeClient:
         """
         import time
         from datetime import datetime, timezone, timedelta
+
+        if not self._time_synced:
+            await self._sync_time_offset_async()
 
         true_utc_timestamp = time.time() + self.time_offset_seconds
         wat_tz = timezone(timedelta(hours=1), name="WAT")

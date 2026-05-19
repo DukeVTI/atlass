@@ -69,8 +69,14 @@ class ToolRegistry:
         }
         
         try:
+            token = os.getenv("WORKER_TOKEN", "")
             async with httpx.AsyncClient() as client:
-                await client.post(api_url, json=payload, timeout=2.0)
+                await client.post(
+                    api_url,
+                    json=payload,
+                    headers={"Authorization": f"Bearer {token}"},
+                    timeout=2.0,
+                )
         except Exception as e:
             logger.warning(f"Failed to write to central audit log: {e}")
 
@@ -177,10 +183,6 @@ class RejectActionTool(Tool):
         return f"Successfully canceled the pending action '{target_tool_name}'."
 
 registry.register(RejectActionTool())
-
-# ─── Register PC Worker Tools ───
-from .local_file import LocalFileTool
-registry.register(LocalFileTool())
 
 # ─── Register Android Mobile Worker Tools ───
 from .mobile import MobileTool
